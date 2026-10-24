@@ -1,0 +1,6 @@
+{
+  "name": "PixelForge AI - Sprite Character Studio",
+  "description": "Generator sprite karakter pixel art berbasis prompt multi-resolusi (32x32, 64x64, 128x128) dengan AI self-review, dukungan Local LLM (Ollama), MCP, OmniRoute, dan live pipeline execution log.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
