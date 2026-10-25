@@ -14,7 +14,8 @@ import {
   DEFAULT_SPEC,
   CharacterSpec,
   countSilhouetteDifferences,
-  validateReferenceImagePayload
+  validateReferenceImagePayload,
+  applyReferenceAnalysisToSpec
 } from './src/utils/pixelforgeSpec.ts';
 
 dotenv.config();
@@ -423,6 +424,12 @@ ATURAN RETRY DIVERSITY:
       } catch (divErr: any) {
         console.warn('Diversity guard retry skipped:', divErr.message);
       }
+    }
+
+    // Pastikan hasil ReferenceAnalysis (hairStyle, traits, accessories, proportions, palette)
+    // benar-benar terhubung ke CharacterSpec dan dipakai renderer
+    if (referenceAnalysis && spec) {
+      spec = applyReferenceAnalysisToSpec(spec, referenceAnalysis, prompt);
     }
 
     // Simpan ke history recentSpecs (maks 5) dan catat lastPrompt

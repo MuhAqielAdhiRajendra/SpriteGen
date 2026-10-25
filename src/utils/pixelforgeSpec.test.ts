@@ -143,3 +143,125 @@ test('fallback status format preserves source and reason without crashing', () =
   assert.equal(fallbackResponse.spec, null);
   assert.ok(fallbackResponse.reason.includes('GEMINI_API_KEY'));
 });
+
+test('applyReferenceAnalysisToSpec merges vision analysis into CharacterSpec while respecting prompt overrides', async () => {
+  const { applyReferenceAnalysisToSpec, DEFAULT_SPEC } = await import('./pixelforgeSpec.ts');
+
+  const mockAnalysis = {
+    headToBodyRatio: 0.35, // large head / chibi
+    bodyBuild: 'slim' as const,
+    height: 'short' as const,
+    headSize: 'big' as const,
+    hairStyle: 'spiky' as const,
+    hairColor: '#ea580c',
+    skinColor: '#fed7aa',
+    outfitColors: {
+      primary: '#16a34a',
+      secondary: '#854d0e',
+      accent: '#dc2626',
+      metal: '#e2e8f0',
+    },
+    accessories: ['scarf' as const, 'belt' as const, 'boots' as const],
+    weaponType: 'sword' as const,
+    traits: ['pointy_ears' as const],
+    styleNotes: 'Hero with orange spiky hair, green tunic and red scarf',
+  };
+
+  // 1. Without prompt override, analysis fields should transfer to spec
+  const mergedSpec = applyReferenceAnalysisToSpec(DEFAULT_SPEC, mockAnalysis, '');
+  assert.equal(mergedSpec.hairStyle, 'spiky');
+  assert.equal(mergedSpec.palette.hair, '#ea580c');
+  assert.equal(mergedSpec.palette.primary, '#16a34a');
+  assert.equal(mergedSpec.palette.accent, '#dc2626');
+  assert.equal(mergedSpec.body, 'slim');
+  assert.equal(mergedSpec.proportions?.height, 'short');
+  assert.equal(mergedSpec.proportions?.headSize, 'big');
+  assert.ok(mergedSpec.traits?.includes('pointy_ears'));
+  assert.ok(mergedSpec.accessories?.includes('scarf'));
+  assert.ok(mergedSpec.accessories?.includes('boots'));
+
+  // 2. With explicit prompt override: "bawa tongkat sihir dan rambut panjang"
+  const overridePrompt = 'Penyihir bawa tongkat sihir dan rambut panjang warna biru';
+  const overriddenSpec = applyReferenceAnalysisToSpec(DEFAULT_SPEC, mockAnalysis, overridePrompt);
+  // Prompt explicitly asks for tongkat (staff) and rambut panjang (long hair)
+  assert.equal(overriddenSpec.hairStyle, 'long');
+  // weapon was not set to staff in DEFAULT_SPEC yet, but mockAnalysis had sword; prompt override shouldn't force sword over staff
+  assert.notEqual(overriddenSpec.weapon, 'sword');
+});
+
+test('resolveLayout dynamically calculates dimensions based on proportions and archetype', async () => {
+  const { resolveLayout, DEFAULT_SPEC } = await import('./pixelforgeSpec.ts');
+
+  // Standard character
+  const standardLayout = resolveLayout(DEFAULT_SPEC, 32);
+  assert.equal(standardLayout.scale, 1);
+  assert.equal(standardLayout.cx, 16);
+  assert.equal(standardLayout.groundY, 30);
+
+  // Tall character with heavy body
+  const tallHeavySpec = {
+    ...DEFAULT_SPEC,
+    body: 'heavy' as const,
+    proportions: {
+      height: 'tall' as const,
+      headSize: 'small' as const,
+      torsoWidth: 3 as const,
+      legLength: 'long' as const,
+      armThickness: 2 as const,
+    },
+  };
+  const tallLayout = resolveLayout(tallHeavySpec, 32);
+  assert.ok(tallLayout.torsoW > standardLayout.torsoW, 'Torso should be wider');
+  assert.ok(tallLayout.legLen > standardLayout.legLen, 'Legs should be longer');
+  assert.ok(tallLayout.headR < standardLayout.headR, 'Head should be smaller');
+
+  // Goblin archetype automatically gets short height and big head if unspecified
+  const goblinSpec = {
+    ...DEFAULT_SPEC,
+    archetype: 'goblin' as const,
+    body: 'slim' as const,
+    proportions: undefined,
+  };
+  const goblinLayout = resolveLayout(goblinSpec, 32);
+  assert.ok(goblinLayout.headR > standardLayout.headR, 'Goblin should have larger head');
+  assert.ok(goblinLayout.legLen < standardLayout.legLen, 'Goblin should have shorter legs');
+
+  // Hunch trait shifts head forward
+  const hunchSpec = {
+    ...DEFAULT_SPEC,
+    traits: ['hunch' as const],
+  };
+  const hunchLayout = resolveLayout(hunchSpec, 32);
+  assert.ok(hunchLayout.headOffsetX > 0, 'Head should be shifted forward with hunch trait');
+});
+
+test('drawCharacterCelFromSpec renders all 5 hair styles and modular traits without error', async () => {
+  const { drawCharacterCelFromSpec, DEFAULT_SPEC, POSES } = await import('./pixelEngine.ts');
+
+  const hairStyles = ['none', 'short', 'spiky', 'long', 'jambul'] as const;
+  for (const style of hairStyles) {
+    const spec = { ...DEFAULT_SPEC, hairStyle: style };
+    const { body, fx } = drawCharacterCelFromSpec(spec, POSES.idle[0], 32);
+    assert.equal(body.length, 32);
+    assert.equal(body[0].length, 32);
+  }
+
+  // Trait combinations
+  const traitCombos = [
+    ['horns', 'tail'] as const,
+    ['pointy_ears', 'wings'] as const,
+    ['beard', 'hunch'] as const,
+  ];
+  for (const traits of traitCombos) {
+    const spec = {
+      ...DEFAULT_SPEC,
+      traits: [...traits],
+      accessories: ['scarf', 'belt', 'shoulder_pad'] as any,
+    };
+    const { body } = drawCharacterCelFromSpec(spec, POSES.idle[0], 32);
+    // Ensure pixels exist
+    const hasPixels = body.some(row => row.some(c => c !== 'transparent'));
+    assert.ok(hasPixels, 'Cel should contain rendered pixels');
+  }
+});
+

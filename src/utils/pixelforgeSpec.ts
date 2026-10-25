@@ -19,7 +19,7 @@ export const HEAD_SIZES = ['small', 'normal', 'big'] as const;
 export const LEG_LENGTHS = ['short', 'normal', 'long'] as const;
 export const TRAITS = ['horns', 'pointy_ears', 'tail', 'hunch', 'wings', 'beard', 'none'] as const;
 export const ACCESSORIES = ['scarf', 'belt', 'gloves', 'boots', 'shoulder_pad', 'backpack', 'quiver'] as const;
-export const HAIR_STYLES = ['none', 'short', 'spiky', 'long'] as const;
+export const HAIR_STYLES = ['none', 'short', 'spiky', 'long', 'jambul'] as const;
 
 export type Archetype = (typeof ARCHETYPES)[number];
 export type Anim = (typeof ANIMS)[number];
@@ -68,12 +68,51 @@ export interface CharacterSpec {
     metal: string;
   };
   animations: Anim[];
-  // Optional modular diversity fields
+  // Modular diversity fields
   proportions?: CharacterProportions;
   variants?: CharacterVariants;
   traits?: CharacterTrait[];
   accessories?: CharacterAccessory[];
   hairStyle?: HairStyle;
+}
+
+export interface CharacterLayout {
+  cx: number;
+  groundY: number;
+  torsoW: number;
+  torsoH: number;
+  torsoY: number;
+  hipY: number;
+  legW: number;
+  legLen: number;
+  armLen: number;
+  armThickness: number;
+  headR: number;
+  headY: number;
+  headOffsetX: number;
+  hairHeight: number;
+  capeWidth: number;
+  scale: number;
+}
+
+export interface ReferenceAnalysis {
+  headToBodyRatio: number;
+  bodyBuild: 'slim' | 'normal' | 'heavy';
+  height: HeightType;
+  headSize: HeadSizeType;
+  hairStyle: 'none' | 'short' | 'spiky' | 'long' | 'jambul' | 'hood' | 'helmet';
+  hairColor: string;
+  skinColor: string;
+  outfitColors: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    metal: string;
+  };
+  accessories: CharacterAccessory[];
+  weaponType: WeaponType;
+  traits: CharacterTrait[];
+  styleNotes?: string;
 }
 
 export const DEFAULT_PROPORTIONS: CharacterProportions = {
@@ -90,6 +129,232 @@ export const DEFAULT_VARIANTS: CharacterVariants = {
   torso: 0,
   weapon: 0,
 };
+
+/**
+ * Connects ReferenceAnalysis directly to CharacterSpec.
+ * Ensures hairStyle, traits, accessories, proportions, body, and colors from
+ * the vision analysis are merged into the CharacterSpec, while respecting user prompt overrides.
+ */
+export function applyReferenceAnalysisToSpec(
+  spec: CharacterSpec,
+  analysis: ReferenceAnalysis,
+  userPrompt?: string
+): CharacterSpec {
+  const p = (userPrompt || '').toLowerCase();
+
+  // 1. Proportions
+  const proportions: CharacterProportions = { ...DEFAULT_PROPORTIONS, ...(spec.proportions || {}) };
+  if (!p.includes('tinggi') && !p.includes('jangkung') && !p.includes('pendek') && !p.includes('kerdil')) {
+    if (analysis.height && HEIGHTS.includes(analysis.height)) {
+      proportions.height = analysis.height;
+    }
+  }
+  if (!p.includes('kepala besar') && !p.includes('kepala kecil')) {
+    if (analysis.headSize && HEAD_SIZES.includes(analysis.headSize)) {
+      proportions.headSize = analysis.headSize;
+    } else if (typeof analysis.headToBodyRatio === 'number') {
+      if (analysis.headToBodyRatio > 0.30) proportions.headSize = 'big';
+      else if (analysis.headToBodyRatio < 0.23) proportions.headSize = 'small';
+    }
+  }
+  if (!p.includes('kekar') && !p.includes('tebal') && !p.includes('ramping') && !p.includes('slim')) {
+    if (analysis.bodyBuild === 'heavy') proportions.torsoWidth = 3;
+    else if (analysis.bodyBuild === 'slim') proportions.torsoWidth = 1;
+    else proportions.torsoWidth = 2;
+  }
+
+  // 2. Hair Style & Head
+  let hairStyle: HairStyle = spec.hairStyle || 'short';
+  let head: HeadType = spec.head;
+  if (p.includes('rambut panjang') || p.includes('long hair')) {
+    hairStyle = 'long';
+  } else if (p.includes('jabrik') || p.includes('spiky')) {
+    hairStyle = 'spiky';
+  } else if (p.includes('jambul') || p.includes('mohawk')) {
+    hairStyle = 'jambul';
+  } else if (p.includes('botak') || p.includes('bald') || p.includes('tanpa rambut')) {
+    hairStyle = 'none';
+  } else if (!p.includes('rambut') && !p.includes('tudung') && !p.includes('helm')) {
+    if (analysis.hairStyle === 'hood') {
+      head = 'hood';
+      hairStyle = 'none';
+    } else if (analysis.hairStyle === 'helmet') {
+      head = 'helmet_open';
+      hairStyle = 'short';
+    } else if (analysis.hairStyle && HAIR_STYLES.includes(analysis.hairStyle as HairStyle)) {
+      hairStyle = analysis.hairStyle as HairStyle;
+    }
+  }
+
+  // 3. Body Build
+  let body: BodyType = spec.body;
+  if (!p.includes('heavy') && !p.includes('kekar') && !p.includes('slim') && !p.includes('ramping')) {
+    if (analysis.bodyBuild && BODIES.includes(analysis.bodyBuild as BodyType)) {
+      body = analysis.bodyBuild as BodyType;
+    }
+  }
+
+  // 4. Weapon
+  let weapon: WeaponType = spec.weapon;
+  if (p.includes('tongkat') || p.includes('staff') || p.includes('wand')) {
+    weapon = 'staff';
+  } else if (p.includes('panah') || p.includes('busur') || p.includes('bow')) {
+    weapon = 'bow';
+  } else if (p.includes('kapak') || p.includes('axe')) {
+    weapon = 'axe';
+  } else if (p.includes('belati') || p.includes('dagger') || p.includes('pisau')) {
+    weapon = 'dagger';
+  } else if (p.includes('pedang') || p.includes('sword')) {
+    weapon = 'sword';
+  } else if (p.includes('tanpa senjata') || p.includes('tangan kosong')) {
+    weapon = 'none';
+  } else if (analysis.weaponType && WEAPONS.includes(analysis.weaponType as WeaponType)) {
+    weapon = analysis.weaponType as WeaponType;
+  }
+
+  // 5. Traits
+  const traits: CharacterTrait[] = [...(spec.traits || [])].filter((t: CharacterTrait) => t !== 'none');
+  if (Array.isArray(analysis.traits)) {
+    for (const t of analysis.traits) {
+      if (t !== 'none' && (TRAITS as readonly string[]).includes(t) && !traits.includes(t as CharacterTrait)) {
+        traits.push(t as CharacterTrait);
+      }
+    }
+  }
+  const finalTraits: CharacterTrait[] = traits.length > 0 ? (traits.slice(0, 2) as CharacterTrait[]) : ['none'];
+
+  // 6. Accessories
+  const accessories = [...(spec.accessories || [])];
+  if (Array.isArray(analysis.accessories)) {
+    for (const a of analysis.accessories) {
+      if (ACCESSORIES.includes(a as CharacterAccessory) && !accessories.includes(a as CharacterAccessory)) {
+        accessories.push(a as CharacterAccessory);
+      }
+    }
+  }
+  const finalAccessories = accessories.slice(0, 3) as CharacterAccessory[];
+
+  // 7. Palette
+  const palette = { ...spec.palette };
+  const hexRe = /^#[0-9a-fA-F]{6}$/;
+  if (!p.includes('kulit') && analysis.skinColor && hexRe.test(analysis.skinColor)) {
+    palette.skin = analysis.skinColor;
+  }
+  if (!p.includes('rambut') && analysis.hairColor && hexRe.test(analysis.hairColor)) {
+    palette.hair = analysis.hairColor;
+  }
+  if (!p.includes('baju') && !p.includes('zirah') && !p.includes('warna')) {
+    if (analysis.outfitColors?.primary && hexRe.test(analysis.outfitColors.primary)) {
+      palette.primary = analysis.outfitColors.primary;
+    }
+    if (analysis.outfitColors?.secondary && hexRe.test(analysis.outfitColors.secondary)) {
+      palette.secondary = analysis.outfitColors.secondary;
+    }
+    if (analysis.outfitColors?.accent && hexRe.test(analysis.outfitColors.accent)) {
+      palette.accent = analysis.outfitColors.accent;
+    }
+    if (analysis.outfitColors?.metal && hexRe.test(analysis.outfitColors.metal)) {
+      palette.metal = analysis.outfitColors.metal;
+    }
+  }
+
+  return {
+    ...spec,
+    body,
+    head,
+    weapon,
+    proportions,
+    variants: spec.variants || DEFAULT_VARIANTS,
+    traits: finalTraits,
+    accessories: finalAccessories,
+    hairStyle,
+    palette,
+  };
+}
+
+/**
+ * Resolves precise layout metrics for a CharacterSpec across any canvas size.
+ * Replaces hardcoded values with dynamic anatomical calculations based on proportions, body, and traits.
+ */
+export function resolveLayout(spec: CharacterSpec, size: number = 32): CharacterLayout {
+  const scale = size / 32;
+  const cx = Math.floor(size / 2);
+  const groundY = size - Math.round(2 * scale);
+
+  const height: HeightType = spec.proportions?.height ||
+    (spec.archetype === 'goblin' ? 'short' : spec.body === 'heavy' ? 'tall' : 'normal');
+
+  const headSize: HeadSizeType = spec.proportions?.headSize ||
+    (spec.archetype === 'goblin' ? 'big' : spec.body === 'heavy' ? 'small' : 'normal');
+
+  const torsoWidthVal: 1 | 2 | 3 = spec.proportions?.torsoWidth ||
+    (spec.body === 'slim' ? 1 : spec.body === 'heavy' ? 3 : 2);
+
+  const legLengthVal: LegLengthType = spec.proportions?.legLength ||
+    (height === 'short' ? 'short' : height === 'tall' ? 'long' : 'normal');
+
+  const armThicknessVal: 1 | 2 = spec.proportions?.armThickness ||
+    (spec.body === 'heavy' ? 2 : 1);
+
+  // Base 32x32 values
+  const legLenBase = legLengthVal === 'short' ? 5 : legLengthVal === 'long' ? 9 : 7;
+  let torsoHBase = height === 'short' ? 6 : height === 'tall' ? 9 : 7;
+  if (spec.body === 'heavy') torsoHBase += 1;
+  else if (spec.body === 'slim') torsoHBase -= 1;
+
+  const torsoWBase = torsoWidthVal === 1 ? 6 : torsoWidthVal === 3 ? 10 : 8;
+  const legWBase = torsoWBase >= 10 || armThicknessVal === 2 ? 3 : 2;
+
+  const headRBase = headSize === 'small' ? 3.0 : headSize === 'big' ? 4.5 : 3.5;
+  const armLenBase = Math.max(4, Math.round(torsoHBase * 0.75));
+
+  const hairStyle = spec.hairStyle || 'short';
+  const hairHeightBase = hairStyle === 'none' ? 0 : hairStyle === 'short' ? 1 : hairStyle === 'spiky' ? 3 : 4;
+  const capeWidthBase = torsoWBase + (spec.cape === 'long' ? 4 : 2);
+
+  // Scaled dimensions
+  const legLen = Math.max(3, Math.round(legLenBase * scale));
+  const torsoH = Math.max(4, Math.round(torsoHBase * scale));
+  const torsoW = Math.max(4, Math.round(torsoWBase * scale));
+  const legW = Math.max(1, Math.round(legWBase * scale));
+  const armThickness = Math.max(1, Math.round(armThicknessVal * scale));
+  const armLen = Math.max(3, Math.round(armLenBase * scale));
+  const headR = Math.max(2, Math.round(headRBase * scale * 2) / 2);
+  const hairHeight = Math.round(hairHeightBase * scale);
+  const capeWidth = Math.round(capeWidthBase * scale);
+
+  // Vertical hierarchy built upwards from groundY
+  const hipY = groundY - legLen;
+  const torsoY = hipY - torsoH;
+
+  const hasHunch = (spec.traits || []).includes('hunch');
+  let headY = torsoY - Math.ceil(headR) - 1;
+  let headOffsetX = 0;
+
+  if (hasHunch) {
+    headY = torsoY + Math.round(1 * scale);
+    headOffsetX = Math.round(2 * scale);
+  }
+
+  return {
+    cx,
+    groundY,
+    torsoW,
+    torsoH,
+    torsoY,
+    hipY,
+    legW,
+    legLen,
+    armLen,
+    armThickness,
+    headR,
+    headY,
+    headOffsetX,
+    hairHeight,
+    capeWidth,
+    scale,
+  };
+}
 
 // JSON schema untuk structured output CharacterSpec (Gemini responseSchema)
 export const SPEC_JSON_SCHEMA = {
@@ -172,7 +437,7 @@ export const REFERENCE_ANALYSIS_SCHEMA = {
     bodyBuild: { type: 'string', enum: ['slim', 'normal', 'heavy'] },
     height: { type: 'string', enum: ['short', 'normal', 'tall'] },
     headSize: { type: 'string', enum: ['small', 'normal', 'big'] },
-    hairStyle: { type: 'string', enum: ['none', 'short', 'spiky', 'long', 'hood', 'helmet'] },
+    hairStyle: { type: 'string', enum: ['none', 'short', 'spiky', 'long', 'jambul', 'hood', 'helmet'] },
     hairColor: { type: 'string', description: 'Warna rambut heksadesimal 6 digit (#RRGGBB)' },
     skinColor: { type: 'string', description: 'Warna kulit heksadesimal 6 digit (#RRGGBB)' },
     outfitColors: {
@@ -226,7 +491,7 @@ ATURAN OUTPUT
    - weapon: sword | axe | staff | bow | dagger | none
    - offhand: shield | none
    - cape: none | short | long
-   - hairStyle: none | short | spiky | long
+   - hairStyle: none | short | spiky | long | jambul
    - proportions:
      * height: short | normal | tall
      * headSize: small | normal | big

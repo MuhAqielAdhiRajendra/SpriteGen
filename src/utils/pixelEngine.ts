@@ -8,6 +8,7 @@ import {
 } from '../types/sprite';
 import {
   CharacterSpec,
+  CharacterLayout,
   Pose,
   POSES,
   getPose,
@@ -20,7 +21,27 @@ import {
   removeOrphans,
   upscaleNearest,
   validateSequence,
-  DEFAULT_SPEC
+  resolveLayout,
+  hashString,
+  DEFAULT_SPEC,
+  DEFAULT_PROPORTIONS,
+  DEFAULT_VARIANTS,
+  HEIGHTS,
+  HEAD_SIZES,
+  LEG_LENGTHS,
+  BODIES,
+  ARCHETYPES,
+  HAIR_STYLES,
+  TRAITS,
+  ACCESSORIES,
+  type HeightType,
+  type HeadSizeType,
+  type LegLengthType,
+  type CharacterTrait,
+  type CharacterAccessory,
+  type HairStyle,
+  type CharacterProportions,
+  type CharacterVariants,
 } from './pixelforgeSpec';
 
 export * from './pixelforgeSpec';
@@ -291,30 +312,46 @@ export function detectRequestedAnimations(prompt: string, explicit?: AnimationTy
 }
 
 /**
- * Offline / Procedural prompt parser that outputs a validated CharacterSpec
+ * Offline / Procedural prompt parser that outputs a validated CharacterSpec.
+ * Uses hashString(prompt) for deterministic diversity: different prompts always produce different shapes.
  */
 export function specFromPromptProcedural(prompt: string): CharacterSpec {
   const p = prompt.toLowerCase();
+  const h = hashString(prompt);
 
-  // Archetype
+  // Archetype — expanded keywords
   let archetype: CharacterSpec['archetype'] = 'fighter';
-  if (p.includes('archer') || p.includes('panah') || p.includes('bow') || p.includes('ranger') || p.includes('pemburu')) {
+  if (p.includes('archer') || p.includes('panah') || p.includes('bow') || p.includes('ranger') || p.includes('pemburu') || p.includes('pemanah')) {
     archetype = 'archer';
   } else if (p.includes('mage') || p.includes('penyihir') || p.includes('wizard') || p.includes('sorcerer') || p.includes('sihir') || p.includes('staff') || p.includes('tongkat')) {
     archetype = 'mage';
-  } else if (p.includes('goblin') || p.includes('orc') || p.includes('monster hijau')) {
+  } else if (p.includes('goblin') || p.includes('orc') || p.includes('monster hijau') || p.includes('troll')) {
     archetype = 'goblin';
-  } else if (p.includes('zombie') || p.includes('mayat') || p.includes('undead') || p.includes('tengkorak') || p.includes('ghoul')) {
+  } else if (p.includes('zombie') || p.includes('mayat') || p.includes('undead') || p.includes('tengkorak') || p.includes('ghoul') || p.includes('skeleton')) {
     archetype = 'zombie';
   } else if (p.includes('npc') || p.includes('warga') || p.includes('penduduk') || p.includes('pedagang') || p.includes('rakyat')) {
     archetype = 'npc';
+  } else if (p.includes('knight') || p.includes('ksatria') || p.includes('pahlawan') || p.includes('hero') || p.includes('pendekar') || p.includes('fighter') || p.includes('pejuang')) {
+    archetype = 'fighter';
+  } else if (p.includes('ninja') || p.includes('assassin') || p.includes('pembunuh')) {
+    archetype = 'fighter'; // slim fighter
+  } else if (p.includes('raksasa') || p.includes('giant') || p.includes('ogre')) {
+    archetype = 'fighter'; // heavy fighter
+  } else if (p.includes('kurcaci') || p.includes('dwarf')) {
+    archetype = 'fighter'; // short heavy fighter
+  } else if (p.includes('elf') || p.includes('peri')) {
+    archetype = 'archer'; // default elf to archer
+  } else {
+    // No keyword match → deterministic pick via hash
+    const archetypePool: CharacterSpec['archetype'][] = ['fighter', 'archer', 'mage', 'goblin', 'zombie', 'npc'];
+    archetype = archetypePool[h % archetypePool.length];
   }
 
   // Body
   let body: CharacterSpec['body'] = 'normal';
-  if (p.includes('heavy') || p.includes('tebal') || p.includes('kekar') || p.includes('besar') || p.includes('raksasa') || p.includes('tank') || p.includes('plate') || p.includes('zirah tebal')) {
+  if (p.includes('heavy') || p.includes('tebal') || p.includes('kekar') || p.includes('besar') || p.includes('raksasa') || p.includes('tank') || p.includes('plate') || p.includes('zirah tebal') || p.includes('giant') || p.includes('ogre') || p.includes('kurcaci') || p.includes('dwarf')) {
     body = 'heavy';
-  } else if (archetype === 'archer' || archetype === 'mage' || archetype === 'goblin' || p.includes('slim') || p.includes('ramping') || p.includes('lincah') || p.includes('ninja') || p.includes('kecil')) {
+  } else if (archetype === 'archer' || archetype === 'mage' || archetype === 'goblin' || p.includes('slim') || p.includes('ramping') || p.includes('lincah') || p.includes('ninja') || p.includes('kecil') || p.includes('elf') || p.includes('peri')) {
     body = 'slim';
   }
 
@@ -330,8 +367,8 @@ export function specFromPromptProcedural(prompt: string): CharacterSpec {
     head = 'hood';
   }
 
-  // Weapon
-  let weapon: CharacterSpec['weapon'] = 'sword';
+  // Weapon — zombie defaults to 'none'
+  let weapon: CharacterSpec['weapon'] = archetype === 'zombie' ? 'none' : 'sword';
   if (archetype === 'archer' || p.includes('bow') || p.includes('panah') || p.includes('busur')) {
     weapon = 'bow';
   } else if (archetype === 'mage' || p.includes('staff') || p.includes('tongkat') || p.includes('wand')) {
@@ -358,6 +395,94 @@ export function specFromPromptProcedural(prompt: string): CharacterSpec {
     cape = 'short';
   }
 
+  // Hair style — detect from prompt or hash-based
+  let hairStyle: HairStyle = 'short';
+  if (p.includes('jabrik') || p.includes('spiky')) {
+    hairStyle = 'spiky';
+  } else if (p.includes('jambul') || p.includes('mohawk') || p.includes('crest')) {
+    hairStyle = 'jambul';
+  } else if (p.includes('panjang') || p.includes('long hair') || p.includes('rambut panjang')) {
+    hairStyle = 'long';
+  } else if (p.includes('botak') || p.includes('bald') || p.includes('tanpa rambut') || head === 'helmet_closed' || head === 'hood') {
+    hairStyle = 'none';
+  } else {
+    // Hash-based pick
+    const hairPool: HairStyle[] = ['short', 'spiky', 'long', 'jambul', 'none'];
+    hairStyle = hairPool[(h >> 3) % hairPool.length];
+  }
+
+  // Proportions — deterministic from hash
+  const heightPool: HeightType[] = ['short', 'normal', 'tall'];
+  const headSizePool: HeadSizeType[] = ['small', 'normal', 'big'];
+  const legLenPool: LegLengthType[] = ['short', 'normal', 'long'];
+
+  let propHeight: HeightType = heightPool[(h >> 5) % 3];
+  let propHeadSize: HeadSizeType = headSizePool[(h >> 7) % 3];
+  let propTorsoWidth: 1 | 2 | 3 = ([1, 2, 3] as const)[(h >> 9) % 3];
+  let propLegLength: LegLengthType = legLenPool[(h >> 11) % 3];
+  let propArmThickness: 1 | 2 = ([1, 2] as const)[(h >> 13) % 2];
+
+  // Override proportions from explicit prompt keywords
+  if (p.includes('jangkung') || p.includes('tinggi') || p.includes('tall')) propHeight = 'tall';
+  else if (p.includes('kerdil') || p.includes('pendek') || p.includes('short') || p.includes('kurcaci') || p.includes('dwarf')) propHeight = 'short';
+  if (p.includes('kepala besar') || p.includes('big head') || p.includes('chibi')) propHeadSize = 'big';
+  else if (p.includes('kepala kecil') || p.includes('small head')) propHeadSize = 'small';
+  if (p.includes('raksasa') || p.includes('giant') || p.includes('ogre')) {
+    propHeight = 'tall'; propTorsoWidth = 3; propArmThickness = 2;
+  }
+  if (p.includes('kurcaci') || p.includes('dwarf')) {
+    propHeight = 'short'; propTorsoWidth = 3; propArmThickness = 2; propLegLength = 'short';
+  }
+
+  const proportions: CharacterProportions = {
+    height: propHeight,
+    headSize: propHeadSize,
+    torsoWidth: propTorsoWidth,
+    legLength: propLegLength,
+    armThickness: propArmThickness,
+  };
+
+  // Variants — deterministic from hash
+  const variants: CharacterVariants = {
+    hair: (h >> 15) % 5,
+    head: (h >> 17) % 4,
+    torso: (h >> 19) % 4,
+    weapon: (h >> 21) % 4,
+  };
+
+  // Traits — deterministic from hash, max 2
+  const traits: CharacterTrait[] = [];
+  if (p.includes('tanduk') || p.includes('horns')) traits.push('horns');
+  if (p.includes('telinga runcing') || p.includes('pointy ears') || p.includes('elf') || p.includes('peri') || archetype === 'goblin') traits.push('pointy_ears');
+  if (p.includes('ekor') || p.includes('tail')) traits.push('tail');
+  if (p.includes('bungkuk') || p.includes('hunch') || archetype === 'zombie') traits.push('hunch');
+  if (p.includes('sayap') || p.includes('wings')) traits.push('wings');
+  if (p.includes('jenggot') || p.includes('beard') || p.includes('kurcaci') || p.includes('dwarf')) traits.push('beard');
+  if (traits.length === 0) {
+    // Hash-based pick, but most characters get 'none'
+    const traitPool: CharacterTrait[] = ['none', 'none', 'pointy_ears', 'tail', 'beard', 'none'];
+    const picked = traitPool[(h >> 23) % traitPool.length];
+    traits.push(picked);
+  }
+  const finalTraits = traits.slice(0, 2);
+
+  // Accessories — deterministic from hash, max 3
+  const accessories: CharacterAccessory[] = [];
+  if (p.includes('syal') || p.includes('scarf')) accessories.push('scarf');
+  if (p.includes('sabuk') || p.includes('belt') || p.includes('ikat')) accessories.push('belt');
+  if (p.includes('sarung tangan') || p.includes('gloves')) accessories.push('gloves');
+  if (p.includes('sepatu') || p.includes('boots') || p.includes('bot')) accessories.push('boots');
+  if (p.includes('bahu') || p.includes('shoulder pad') || p.includes('pauldron')) accessories.push('shoulder_pad');
+  if (p.includes('ransel') || p.includes('backpack') || p.includes('tas')) accessories.push('backpack');
+  if (p.includes('tabung panah') || p.includes('quiver') || (archetype === 'archer' && weapon === 'bow')) accessories.push('quiver');
+  if (accessories.length === 0) {
+    const accPool: CharacterAccessory[] = ['belt', 'boots', 'gloves', 'scarf'];
+    accessories.push(accPool[(h >> 25) % accPool.length]);
+    const secondAcc = accPool[(h >> 27) % accPool.length];
+    if (secondAcc !== accessories[0]) accessories.push(secondAcc);
+  }
+  const finalAccessories = [...new Set(accessories)].slice(0, 3);
+
   // Palette
   let skin = '#f2c9a0';
   let hair = '#4a3728';
@@ -367,52 +492,25 @@ export function specFromPromptProcedural(prompt: string): CharacterSpec {
   let metal = '#cbd5e1';
 
   if (archetype === 'goblin') {
-    skin = '#65a30d';
-    hair = '#1c1917';
-    primary = '#854d0e';
-    secondary = '#533107';
-    accent = '#eab308';
-    metal = '#94a3b8';
+    skin = '#65a30d'; hair = '#1c1917'; primary = '#854d0e'; secondary = '#533107'; accent = '#eab308'; metal = '#94a3b8';
   } else if (archetype === 'zombie') {
-    skin = '#86efac';
-    hair = '#334155';
-    primary = '#475569';
-    secondary = '#1e293b';
-    accent = '#ef4444';
-    metal = '#64748b';
+    skin = '#86efac'; hair = '#334155'; primary = '#475569'; secondary = '#1e293b'; accent = '#ef4444'; metal = '#64748b';
   }
 
   if (p.includes('merah') || p.includes('red') || p.includes('crimson')) {
-    primary = '#dc2626';
-    secondary = '#7f1d1d';
-    accent = '#fbbf24';
+    primary = '#dc2626'; secondary = '#7f1d1d'; accent = '#fbbf24';
   } else if (p.includes('emas') || p.includes('gold') || p.includes('kuning')) {
-    primary = '#d97706';
-    secondary = '#78350f';
-    accent = '#fef08a';
-    metal = '#facc15';
+    primary = '#d97706'; secondary = '#78350f'; accent = '#fef08a'; metal = '#facc15';
   } else if (p.includes('hijau') || p.includes('green') || p.includes('emerald')) {
-    primary = '#16a34a';
-    secondary = '#14532d';
-    accent = '#facc15';
+    primary = '#16a34a'; secondary = '#14532d'; accent = '#facc15';
   } else if (p.includes('ungu') || p.includes('purple') || p.includes('violet')) {
-    primary = '#9333ea';
-    secondary = '#581c87';
-    accent = '#38bdf8';
+    primary = '#9333ea'; secondary = '#581c87'; accent = '#38bdf8';
   } else if (p.includes('cyan') || p.includes('biru muda') || p.includes('aqua')) {
-    primary = '#0284c7';
-    secondary = '#0c4a6e';
-    accent = '#a5f3fc';
+    primary = '#0284c7'; secondary = '#0c4a6e'; accent = '#a5f3fc';
   } else if (p.includes('hitam') || p.includes('black') || p.includes('dark')) {
-    primary = '#1e293b';
-    secondary = '#0f172a';
-    accent = '#f43f5e';
-    metal = '#94a3b8';
+    primary = '#1e293b'; secondary = '#0f172a'; accent = '#f43f5e'; metal = '#94a3b8';
   } else if (p.includes('putih') || p.includes('perak') || p.includes('silver')) {
-    primary = '#64748b';
-    secondary = '#334155';
-    accent = '#38bdf8';
-    metal = '#e2e8f0';
+    primary = '#64748b'; secondary = '#334155'; accent = '#38bdf8'; metal = '#e2e8f0';
   }
 
   const nameWords = prompt.trim().split(/\s+/).slice(0, 3).join(' ');
@@ -427,7 +525,12 @@ export function specFromPromptProcedural(prompt: string): CharacterSpec {
     offhand,
     cape,
     palette: { skin, hair, primary, secondary, accent, metal },
-    animations: ['idle', 'walk', 'attack']
+    animations: ['idle', 'walk', 'attack'],
+    proportions,
+    variants,
+    traits: finalTraits,
+    accessories: finalAccessories,
+    hairStyle,
   };
 }
 
@@ -561,9 +664,6 @@ export function drawCharacterCel(
   return grid;
 }
 
-/**
- * Draws discrete pixel components for a CharacterSpec into body grid and fx grid
- */
 export function drawCharacterCelFromSpec(
   spec: CharacterSpec,
   pose: Pose,
@@ -574,6 +674,7 @@ export function drawCharacterCelFromSpec(
 
   const pal = buildPalette(spec);
   const { ramps } = pal;
+  const L = resolveLayout(spec, size);
 
   const setBodyPixel = (x: number, y: number, color: string) => {
     const ix = Math.floor(x);
@@ -599,36 +700,27 @@ export function drawCharacterCelFromSpec(
     }
   };
 
-  const cx = 16;
-  const groundY = 30;
-
-  // Body proportions based on spec.body
-  let torsoW = 8;
-  let torsoH = 7;
-  let legW = 2;
-  if (spec.body === 'slim') {
-    torsoW = 6;
-    torsoH = 7;
-    legW = 2;
-  } else if (spec.body === 'heavy') {
-    torsoW = 10;
-    torsoH = 8;
-    legW = 3;
-  }
-
+  // Use layout-derived values
+  const { cx, groundY, torsoW, torsoH, hipY, legW, armLen, headR, scale } = L;
   const torsoX = cx - Math.floor(torsoW / 2);
-  const torsoY = 13 + pose.bodyDy;
-  const hipY = torsoY + torsoH;
+  const torsoY = L.torsoY + Math.round(pose.bodyDy * scale);
+  const hipYPosed = torsoY + torsoH;
+  const headX = cx + L.headOffsetX + Math.round(pose.headDx * scale);
+  const headY = L.headY + Math.round((pose.bodyDy + pose.headDy) * scale);
+  const headRInt = Math.floor(headR);
+  const traits = spec.traits || ['none'];
+  const accessories = spec.accessories || [];
+  const hairStyle = spec.hairStyle || 'short';
 
-  // 1. Cape (Behind body)
+  // ── Layer 0: Cape / Wings / Backpack (behind everything) ──
   if (spec.cape !== 'none') {
-    const capeW = torsoW + (spec.cape === 'long' ? 2 : 0);
-    const capeStartY = torsoY + 1;
-    const capeEndY = spec.cape === 'long' ? groundY - 2 : hipY + 1;
+    const capeW = L.capeWidth;
+    const capeStartY = torsoY + Math.round(1 * scale);
+    const capeEndY = spec.cape === 'long' ? groundY - Math.round(2 * scale) : hipYPosed + Math.round(1 * scale);
     for (let cy = capeStartY; cy <= capeEndY; cy++) {
       const progress = (cy - capeStartY) / Math.max(1, capeEndY - capeStartY);
-      const flare = spec.cape === 'long' ? Math.round(progress * 2) : 0;
-      const sway = pose.capeSway * Math.round(progress * 2);
+      const flare = spec.cape === 'long' ? Math.round(progress * 2 * scale) : 0;
+      const sway = Math.round(pose.capeSway * progress * 2 * scale);
       const startX = cx - Math.floor(capeW / 2) - flare - sway;
       const width = capeW + flare * 2;
       for (let k = 0; k < width; k++) {
@@ -638,16 +730,51 @@ export function drawCharacterCelFromSpec(
     }
   }
 
-  // 2. Back Leg (drawn before torso so torso/front leg overlaps cleanly)
-  const backLegX = cx - Math.floor(torsoW / 2) + pose.legBackX;
-  const backLegGround = groundY - pose.legBackLift;
-  drawBodyRect(backLegX, hipY, legW, Math.max(1, backLegGround - hipY - 2), ramps.secondary.shadow);
-  drawBodyRect(backLegX, backLegGround - 2, legW, 2, ramps.metal.shadow);
+  // Wings trait (behind body)
+  if (traits.includes('wings')) {
+    const wingBaseY = torsoY + Math.round(2 * scale);
+    const wingSpan = Math.round(4 * scale);
+    const sway = Math.round(pose.capeSway * scale);
+    for (let w = 0; w < wingSpan; w++) {
+      const wy = wingBaseY - w + sway;
+      setBodyPixel(cx - Math.floor(torsoW / 2) - Math.round(2 * scale) - w, wy, ramps.accent.base);
+      setBodyPixel(cx - Math.floor(torsoW / 2) - Math.round(2 * scale) - w, wy - 1, ramps.accent.light);
+    }
+  }
 
-  // 3. Back Arm (drawn behind torso)
+  // Backpack accessory (behind body)
+  if (accessories.includes('backpack')) {
+    const bpX = cx - Math.floor(torsoW / 2) - Math.round(3 * scale);
+    const bpY = torsoY + Math.round(1 * scale);
+    const bpW = Math.max(2, Math.round(3 * scale));
+    const bpH = Math.max(3, Math.round(4 * scale));
+    drawBodyRect(bpX, bpY, bpW, bpH, ramps.secondary.shadow);
+    setBodyPixel(bpX + Math.floor(bpW / 2), bpY, ramps.secondary.base);
+  }
+
+  // Quiver accessory (behind body)
+  if (accessories.includes('quiver')) {
+    const qX = cx - Math.floor(torsoW / 2) - Math.round(2 * scale);
+    const qY = torsoY;
+    const qH = Math.max(4, Math.round(6 * scale));
+    drawBodyRect(qX, qY, Math.max(1, Math.round(2 * scale)), qH, ramps.secondary.shadow);
+    // Arrow tips
+    setBodyPixel(qX, qY - 1, ramps.metal.light);
+    setBodyPixel(qX + 1, qY - 1, ramps.metal.base);
+  }
+
+  // ── Layer 1: Back Leg ──
+  const backLegX = cx - Math.floor(torsoW / 2) + Math.round(pose.legBackX * scale);
+  const backLegGround = groundY - Math.round(pose.legBackLift * scale);
+  const backLegLen = Math.max(1, backLegGround - hipYPosed - Math.round(2 * scale));
+  drawBodyRect(backLegX, hipYPosed, legW, backLegLen, ramps.secondary.shadow);
+  // Boot
+  const bootH = Math.round(2 * scale);
+  drawBodyRect(backLegX, backLegGround - bootH, legW, bootH, accessories.includes('boots') ? ramps.secondary.base : ramps.metal.shadow);
+
+  // ── Layer 2: Back Arm ──
   const backShoulderX = torsoX;
-  const backShoulderY = torsoY + 1;
-  const armLen = 5;
+  const backShoulderY = torsoY + Math.round(1 * scale);
   const backRad = (pose.armBack * Math.PI) / 180;
   const backHandX = Math.round(backShoulderX + Math.sin(backRad) * armLen);
   const backHandY = Math.round(backShoulderY + Math.cos(backRad) * armLen);
@@ -656,155 +783,294 @@ export function drawCharacterCelFromSpec(
     const ax = Math.round(backShoulderX + (backHandX - backShoulderX) * (s / armLen));
     const ay = Math.round(backShoulderY + (backHandY - backShoulderY) * (s / armLen));
     setBodyPixel(ax, ay, ramps.primary.shadow);
+    if (L.armThickness >= 2) setBodyPixel(ax, ay + 1, ramps.primary.shadow);
   }
-  setBodyPixel(backHandX, backHandY, ramps.skin.shadow);
+  setBodyPixel(backHandX, backHandY, accessories.includes('gloves') ? ramps.secondary.base : ramps.skin.shadow);
 
-  // 4. Torso / Armor / Clothing
+  // ── Layer 3: Torso / Armor / Clothing ──
   drawBodyRect(torsoX, torsoY, torsoW, torsoH, ramps.primary.base);
   for (let dy = 0; dy < torsoH; dy++) {
     setBodyPixel(torsoX, torsoY + dy, ramps.primary.shadow);
     setBodyPixel(torsoX + torsoW - 1, torsoY + dy, ramps.primary.light);
   }
 
-  if (spec.archetype === 'fighter') {
-    const plateW = torsoW - 2;
-    drawBodyRect(torsoX + 1, torsoY + 1, plateW, 4, ramps.metal.base);
-    setBodyPixel(cx, torsoY + 2, ramps.accent.base);
-    setBodyPixel(cx, torsoY + 1, ramps.metal.light);
-  } else if (spec.archetype === 'archer') {
-    for (let d = 0; d < Math.min(torsoW, torsoH); d++) {
-      setBodyPixel(torsoX + d, torsoY + d, ramps.secondary.base);
+  // 4 explicit torso styles (0: jacket/tunic, 1: plate armor, 2: long coat, 3: vest)
+  const tVar = spec.variants?.torso ?? (spec.archetype === 'fighter' ? 1 : spec.archetype === 'mage' ? 2 : spec.archetype === 'archer' ? 0 : 3);
+  if (tVar === 1) {
+    // 1. Zirah Pelat (Plate Armor): Chestplate with metallic highlights and chest jewel
+    const plateW = Math.max(2, torsoW - Math.round(2 * scale));
+    const plateH = Math.max(2, Math.round(4 * scale));
+    drawBodyRect(torsoX + Math.round(1 * scale), torsoY + Math.round(1 * scale), plateW, plateH, ramps.metal.base);
+    setBodyPixel(cx, torsoY + Math.round(2 * scale), ramps.accent.base);
+    setBodyPixel(cx, torsoY + Math.round(1 * scale), ramps.metal.light);
+  } else if (tVar === 2) {
+    // 2. Jubah Panjang (Long Coat): Skirt extending past hip with split
+    const coatH = Math.max(2, Math.round(3 * scale));
+    drawBodyRect(torsoX, hipYPosed, torsoW, coatH, ramps.primary.base);
+    setBodyPixel(cx, hipYPosed + coatH - 1, 'transparent');
+    setBodyPixel(cx, torsoY + Math.round(1 * scale), ramps.accent.base);
+    setBodyPixel(cx, torsoY + Math.round(2 * scale), ramps.accent.light);
+  } else if (tVar === 3) {
+    // 3. Rompi (Vest): Sleeveless panels in secondary color exposing center
+    drawBodyRect(torsoX, torsoY, Math.max(1, Math.round(2 * scale)), torsoH, ramps.secondary.base);
+    drawBodyRect(torsoX + torsoW - Math.max(1, Math.round(2 * scale)), torsoY, Math.max(1, Math.round(2 * scale)), torsoH, ramps.secondary.base);
+    for (let dy = 1; dy < torsoH - 1; dy += 2) {
+      setBodyPixel(cx, torsoY + dy, ramps.accent.base);
     }
-  } else if (spec.archetype === 'mage') {
-    drawBodyRect(torsoX, hipY, torsoW, 3, ramps.primary.base);
-    setBodyPixel(cx, torsoY + 1, ramps.accent.base);
-    setBodyPixel(cx, torsoY + 2, ramps.accent.light);
-  } else if (spec.archetype === 'goblin') {
-    drawBodyRect(torsoX, hipY, torsoW, 2, ramps.secondary.base);
-    setBodyPixel(torsoX + 1, hipY + 2, ramps.secondary.base);
-    setBodyPixel(torsoX + torsoW - 2, hipY + 2, ramps.secondary.base);
+  } else {
+    // 0. Jaket / Tunic: Central seam with accent buttons
+    for (let dy = 0; dy < torsoH; dy++) {
+      setBodyPixel(cx, torsoY + dy, ramps.secondary.base);
+    }
+    setBodyPixel(cx, torsoY + Math.round(1 * scale), ramps.accent.light);
+    setBodyPixel(cx, torsoY + Math.round(3 * scale), ramps.accent.light);
   }
 
-  // Belt
-  drawBodyRect(torsoX, hipY - 1, torsoW, 1, ramps.secondary.shadow);
-  setBodyPixel(cx, hipY - 1, ramps.accent.base);
+  // Shoulder pad accessory
+  if (accessories.includes('shoulder_pad')) {
+    const spW = Math.max(2, Math.round(3 * scale));
+    const spH = Math.max(1, Math.round(2 * scale));
+    drawBodyRect(torsoX + torsoW - Math.round(1 * scale), torsoY - Math.round(1 * scale), spW, spH, ramps.metal.base);
+    setBodyPixel(torsoX + torsoW, torsoY - Math.round(1 * scale), ramps.metal.light);
+  }
 
-  // 5. Front Leg
-  const frontLegX = cx + 1 + pose.legFrontX;
-  const frontLegGround = groundY - pose.legFrontLift;
-  drawBodyRect(frontLegX, hipY, legW, Math.max(1, frontLegGround - hipY - 2), ramps.secondary.base);
-  drawBodyRect(frontLegX, frontLegGround - 2, legW, 2, ramps.metal.base);
-  setBodyPixel(frontLegX + legW - 1, frontLegGround - 2, ramps.metal.light);
+  // Belt (always) with accent buckle
+  drawBodyRect(torsoX, hipYPosed - Math.round(1 * scale), torsoW, Math.max(1, Math.round(1 * scale)), ramps.secondary.shadow);
+  setBodyPixel(cx, hipYPosed - Math.round(1 * scale), accessories.includes('belt') ? ramps.accent.light : ramps.accent.base);
 
-  // 6. Offhand (Shield)
+  // ── Layer 4: Front Leg ──
+  const frontLegX = cx + Math.round((1 + pose.legFrontX) * scale);
+  const frontLegGround = groundY - Math.round(pose.legFrontLift * scale);
+  const frontLegLen = Math.max(1, frontLegGround - hipYPosed - Math.round(2 * scale));
+  drawBodyRect(frontLegX, hipYPosed, legW, frontLegLen, ramps.secondary.base);
+  drawBodyRect(frontLegX, frontLegGround - bootH, legW, bootH, accessories.includes('boots') ? ramps.secondary.light : ramps.metal.base);
+  setBodyPixel(frontLegX + legW - 1, frontLegGround - bootH, ramps.metal.light);
+
+  // ── Layer 5: Offhand (Shield) ──
   if (spec.offhand === 'shield') {
-    const shieldX = cx - 3 + Math.round(pose.capeSway / 2);
-    const shieldY = torsoY + 1;
-    drawBodyRect(shieldX, shieldY, 5, 7, ramps.primary.base);
-    drawBodyRect(shieldX, shieldY, 5, 1, ramps.metal.base);
-    drawBodyRect(shieldX, shieldY + 6, 5, 1, ramps.metal.base);
-    drawBodyRect(shieldX, shieldY, 1, 7, ramps.metal.base);
-    drawBodyRect(shieldX + 4, shieldY, 1, 7, ramps.metal.base);
-    setBodyPixel(shieldX + 2, shieldY + 3, ramps.accent.base);
-    setBodyPixel(shieldX + 2, shieldY + 2, ramps.accent.light);
+    const shieldW = Math.max(3, Math.round(5 * scale));
+    const shieldH = Math.max(5, Math.round(7 * scale));
+    const shieldX = cx - Math.round(3 * scale) + Math.round(pose.capeSway * scale / 2);
+    const shieldY = torsoY + Math.round(1 * scale);
+    drawBodyRect(shieldX, shieldY, shieldW, shieldH, ramps.primary.base);
+    drawBodyRect(shieldX, shieldY, shieldW, 1, ramps.metal.base);
+    drawBodyRect(shieldX, shieldY + shieldH - 1, shieldW, 1, ramps.metal.base);
+    drawBodyRect(shieldX, shieldY, 1, shieldH, ramps.metal.base);
+    drawBodyRect(shieldX + shieldW - 1, shieldY, 1, shieldH, ramps.metal.base);
+    setBodyPixel(shieldX + Math.floor(shieldW / 2), shieldY + Math.floor(shieldH / 2), ramps.accent.base);
+    setBodyPixel(shieldX + Math.floor(shieldW / 2), shieldY + Math.floor(shieldH / 2) - 1, ramps.accent.light);
   }
 
-  // 7. Head & Face
-  const headX = cx + pose.headDx;
-  const headY = 9 + pose.bodyDy + pose.headDy;
-  const headR = spec.archetype === 'goblin' ? 3 : spec.body === 'heavy' ? 4 : 3.5;
-
-  for (let dy = -Math.floor(headR); dy <= Math.floor(headR); dy++) {
-    for (let dx = -Math.floor(headR); dx <= Math.floor(headR); dx++) {
+  // ── Layer 6: Head & Face ──
+  // Skin base
+  for (let dy = -headRInt; dy <= headRInt; dy++) {
+    for (let dx = -headRInt; dx <= headRInt; dx++) {
       if (dx * dx + dy * dy <= headR * headR + 1) {
         setBodyPixel(headX + dx, headY + dy, ramps.skin.base);
       }
     }
   }
+  setBodyPixel(headX, headY + headRInt, ramps.skin.shadow);
+  setBodyPixel(headX - 1, headY + headRInt, ramps.skin.shadow);
 
-  setBodyPixel(headX, headY + Math.floor(headR), ramps.skin.shadow);
-  setBodyPixel(headX - 1, headY + Math.floor(headR), ramps.skin.shadow);
-
-  // Headwear
+  // Hair rendering (5 styles)
   if (spec.head === 'bare') {
-    for (let dy = -Math.floor(headR); dy <= 0; dy++) {
-      for (let dx = -Math.floor(headR); dx <= Math.floor(headR); dx++) {
-        if (dx * dx + dy * dy <= headR * headR) {
-          setBodyPixel(headX + dx, headY + dy, ramps.hair.base);
+    if (hairStyle === 'none') {
+      // Bald — just skin, add highlight
+      setBodyPixel(headX, headY - headRInt, ramps.skin.light);
+    } else if (hairStyle === 'short') {
+      // Short hair — top hemisphere
+      for (let dy = -headRInt; dy <= 0; dy++) {
+        for (let dx = -headRInt; dx <= headRInt; dx++) {
+          if (dx * dx + dy * dy <= headR * headR) {
+            setBodyPixel(headX + dx, headY + dy, ramps.hair.base);
+          }
         }
       }
+      setBodyPixel(headX, headY - headRInt, ramps.hair.light);
+    } else if (hairStyle === 'spiky') {
+      // Spiky hair — top with spikes jutting upward
+      for (let dy = -headRInt; dy <= 0; dy++) {
+        for (let dx = -headRInt; dx <= headRInt; dx++) {
+          if (dx * dx + dy * dy <= headR * headR) {
+            setBodyPixel(headX + dx, headY + dy, ramps.hair.base);
+          }
+        }
+      }
+      // Spikes
+      const spikeH = Math.max(2, Math.round(3 * scale));
+      for (let s = 0; s < spikeH; s++) {
+        setBodyPixel(headX - 1, headY - headRInt - s - 1, ramps.hair.base);
+        setBodyPixel(headX + 1, headY - headRInt - s - 1, ramps.hair.base);
+        if (s < spikeH - 1) setBodyPixel(headX, headY - headRInt - s - 2, ramps.hair.light);
+      }
+      setBodyPixel(headX + 2, headY - headRInt - 1, ramps.hair.shadow);
+    } else if (hairStyle === 'long') {
+      // Long flowing hair
+      for (let dy = -headRInt; dy <= 0; dy++) {
+        for (let dx = -headRInt; dx <= headRInt; dx++) {
+          if (dx * dx + dy * dy <= headR * headR) {
+            setBodyPixel(headX + dx, headY + dy, ramps.hair.base);
+          }
+        }
+      }
+      // Flowing down the back
+      const flowLen = Math.max(3, Math.round(4 * scale));
+      for (let f = 1; f <= flowLen; f++) {
+        setBodyPixel(headX - headRInt, headY + f, ramps.hair.base);
+        setBodyPixel(headX - headRInt - 1, headY + f, ramps.hair.shadow);
+        if (f < flowLen) setBodyPixel(headX - headRInt + 1, headY + f, ramps.hair.base);
+      }
+      setBodyPixel(headX, headY - headRInt, ramps.hair.light);
+    } else if (hairStyle === 'jambul') {
+      // Jambul (spiky crest/mohawk)
+      for (let dy = -headRInt; dy <= 0; dy++) {
+        for (let dx = -headRInt; dx <= headRInt; dx++) {
+          if (dx * dx + dy * dy <= headR * headR) {
+            setBodyPixel(headX + dx, headY + dy, ramps.hair.base);
+          }
+        }
+      }
+      // Tall central crest
+      const crestH = Math.max(3, Math.round(4 * scale));
+      for (let c = 0; c < crestH; c++) {
+        setBodyPixel(headX, headY - headRInt - c - 1, ramps.hair.base);
+        if (c > 0) setBodyPixel(headX - 1, headY - headRInt - c, ramps.hair.shadow);
+        setBodyPixel(headX + 1, headY - headRInt - c, ramps.hair.light);
+      }
+      setBodyPixel(headX, headY - headRInt - crestH, ramps.hair.light);
     }
-    setBodyPixel(headX, headY - Math.floor(headR), ramps.hair.light);
 
+    // Goblin pointy ears (from archetype)
     if (spec.archetype === 'goblin') {
-      setBodyPixel(headX - Math.floor(headR) - 1, headY - 1, ramps.skin.base);
-      setBodyPixel(headX - Math.floor(headR) - 2, headY - 2, ramps.skin.shadow);
-      setBodyPixel(headX + Math.floor(headR) + 1, headY - 1, ramps.skin.base);
-      setBodyPixel(headX + Math.floor(headR) + 2, headY - 2, ramps.skin.base);
+      setBodyPixel(headX - headRInt - 1, headY - 1, ramps.skin.base);
+      setBodyPixel(headX - headRInt - 2, headY - 2, ramps.skin.shadow);
+      setBodyPixel(headX + headRInt + 1, headY - 1, ramps.skin.base);
+      setBodyPixel(headX + headRInt + 2, headY - 2, ramps.skin.base);
     }
   } else if (spec.head === 'hood') {
-    for (let dy = -Math.floor(headR) - 1; dy <= 1; dy++) {
-      for (let dx = -Math.floor(headR) - 1; dx <= Math.floor(headR) + 1; dx++) {
+    for (let dy = -headRInt - 1; dy <= 1; dy++) {
+      for (let dx = -headRInt - 1; dx <= headRInt + 1; dx++) {
         if (dx * dx + dy * dy <= (headR + 1) * (headR + 1)) {
-          if (!(dx >= 0 && dx <= 2 && dy >= -1 && dy <= 1)) {
+          if (!(dx >= 0 && dx <= Math.round(2 * scale) && dy >= -1 && dy <= 1)) {
             setBodyPixel(headX + dx, headY + dy, ramps.primary.base);
           }
         }
       }
     }
-    setBodyPixel(headX, headY - Math.floor(headR) - 1, ramps.primary.light);
+    setBodyPixel(headX, headY - headRInt - 1, ramps.primary.light);
   } else if (spec.head === 'helmet_open') {
-    for (let dy = -Math.floor(headR); dy <= -1; dy++) {
-      for (let dx = -Math.floor(headR); dx <= Math.floor(headR); dx++) {
+    for (let dy = -headRInt; dy <= -1; dy++) {
+      for (let dx = -headRInt; dx <= headRInt; dx++) {
         if (dx * dx + dy * dy <= headR * headR) {
           setBodyPixel(headX + dx, headY + dy, ramps.metal.base);
         }
       }
     }
-    setBodyPixel(headX, headY - Math.floor(headR), ramps.metal.light);
+    setBodyPixel(headX, headY - headRInt, ramps.metal.light);
     setBodyPixel(headX + 1, headY, ramps.metal.base);
   } else if (spec.head === 'helmet_closed') {
-    for (let dy = -Math.floor(headR); dy <= Math.floor(headR); dy++) {
-      for (let dx = -Math.floor(headR); dx <= Math.floor(headR); dx++) {
+    for (let dy = -headRInt; dy <= headRInt; dy++) {
+      for (let dx = -headRInt; dx <= headRInt; dx++) {
         if (dx * dx + dy * dy <= headR * headR) {
           setBodyPixel(headX + dx, headY + dy, ramps.metal.base);
         }
       }
     }
-    for (let dx = -1; dx <= 2; dx++) {
+    for (let dx = -1; dx <= Math.round(2 * scale); dx++) {
       setBodyPixel(headX + dx, headY, pal.outline);
     }
     setBodyPixel(headX + 1, headY, ramps.accent.light);
-    setBodyPixel(headX, headY - Math.floor(headR), ramps.metal.light);
+    setBodyPixel(headX, headY - headRInt, ramps.metal.light);
   } else if (spec.head === 'horned') {
-    for (let dy = -Math.floor(headR); dy <= 0; dy++) {
-      for (let dx = -Math.floor(headR); dx <= Math.floor(headR); dx++) {
+    for (let dy = -headRInt; dy <= 0; dy++) {
+      for (let dx = -headRInt; dx <= headRInt; dx++) {
         if (dx * dx + dy * dy <= headR * headR) {
           setBodyPixel(headX + dx, headY + dy, ramps.metal.base);
         }
       }
     }
-    setBodyPixel(headX - 3, headY - 3, ramps.accent.base);
-    setBodyPixel(headX - 4, headY - 5, ramps.accent.light);
-    setBodyPixel(headX + 3, headY - 3, ramps.accent.base);
-    setBodyPixel(headX + 4, headY - 5, ramps.accent.light);
+    const hornOff = Math.round(3 * scale);
+    setBodyPixel(headX - hornOff, headY - hornOff, ramps.accent.base);
+    setBodyPixel(headX - hornOff - 1, headY - hornOff - 2, ramps.accent.light);
+    setBodyPixel(headX + hornOff, headY - hornOff, ramps.accent.base);
+    setBodyPixel(headX + hornOff + 1, headY - hornOff - 2, ramps.accent.light);
   }
 
-  // Eyes
+  // Trait: pointy_ears (non-goblin)
+  if (traits.includes('pointy_ears') && spec.archetype !== 'goblin') {
+    const earLen = Math.max(1, Math.round(2 * scale));
+    setBodyPixel(headX - headRInt - 1, headY - 1, ramps.skin.base);
+    setBodyPixel(headX - headRInt - earLen, headY - earLen, ramps.skin.shadow);
+    setBodyPixel(headX + headRInt + 1, headY - 1, ramps.skin.base);
+    setBodyPixel(headX + headRInt + earLen, headY - earLen, ramps.skin.shadow);
+  }
+
+  // Trait: horns (on crown, curved)
+  if (traits.includes('horns') && spec.head !== 'horned') {
+    const hornH = Math.max(2, Math.round(3 * scale));
+    for (let h = 0; h < hornH; h++) {
+      setBodyPixel(headX - headRInt + h, headY - headRInt - h - 1, ramps.accent.base);
+      setBodyPixel(headX + headRInt - h, headY - headRInt - h - 1, ramps.accent.base);
+    }
+    setBodyPixel(headX - headRInt + hornH - 1, headY - headRInt - hornH, ramps.accent.light);
+    setBodyPixel(headX + headRInt - hornH + 1, headY - headRInt - hornH, ramps.accent.light);
+  }
+
+  // Trait: beard
+  if (traits.includes('beard')) {
+    const beardLen = Math.max(2, Math.round(3 * scale));
+    for (let b = 0; b < beardLen; b++) {
+      setBodyPixel(headX - 1, headY + headRInt + b + 1, ramps.hair.base);
+      setBodyPixel(headX, headY + headRInt + b + 1, ramps.hair.base);
+      setBodyPixel(headX + 1, headY + headRInt + b + 1, ramps.hair.shadow);
+    }
+    setBodyPixel(headX, headY + headRInt + beardLen + 1, ramps.hair.shadow);
+  }
+
+  // Eyes & expression (3 explicit variants: 0: dot+glint, 1: slit/focused, 2: wide anime round, 3: visor/eyepatch)
   if (spec.head !== 'helmet_closed') {
-    const eyeX = headX + 1;
+    const eyeX = headX + Math.round(1 * scale);
     const eyeY = headY;
-    if (spec.archetype === 'zombie') {
+    const hVar = spec.variants?.head ?? 0;
+    if (spec.archetype === 'zombie' || hVar === 1) {
+      // Slit / narrow focused eye
       setBodyPixel(eyeX, eyeY, ramps.accent.light);
+      setBodyPixel(eyeX - 1, eyeY, ramps.accent.shadow);
+    } else if (spec.archetype === 'goblin' || hVar === 2) {
+      // Wide round glint eye
+      setBodyPixel(eyeX, eyeY, pal.outline);
+      setBodyPixel(eyeX, eyeY - 1, pal.highlight);
+      setBodyPixel(eyeX + 1, eyeY, pal.outline);
+    } else if (hVar === 3) {
+      // Eyepatch / visor line
+      setBodyPixel(eyeX - 1, eyeY, ramps.secondary.shadow);
+      setBodyPixel(eyeX, eyeY, ramps.secondary.shadow);
+      setBodyPixel(eyeX + 1, eyeY - 1, ramps.metal.light);
     } else {
+      // Standard dot eye with glint
       setBodyPixel(eyeX, eyeY, pal.outline);
       setBodyPixel(eyeX + 1, eyeY - 1, pal.highlight);
     }
   }
 
-  // 8. Front Arm & Hand
+  // Scarf accessory (around neck)
+  if (accessories.includes('scarf')) {
+    const scarfY = headY + headRInt + 1;
+    const scarfW = Math.max(3, torsoW - Math.round(1 * scale));
+    drawBodyRect(cx - Math.floor(scarfW / 2), scarfY, scarfW, Math.max(1, Math.round(2 * scale)), ramps.accent.base);
+    // Trailing tail with cape sway
+    const tailLen = Math.max(2, Math.round(3 * scale));
+    for (let t = 0; t < tailLen; t++) {
+      const sway = Math.round(pose.capeSway * (t + 1) * 0.5 * scale);
+      setBodyPixel(cx + Math.floor(scarfW / 2) + t + sway, scarfY + t, ramps.accent.base);
+      setBodyPixel(cx + Math.floor(scarfW / 2) + t + sway, scarfY + t + 1, ramps.accent.shadow);
+    }
+  }
+
+  // ── Layer 7: Front Arm & Hand ──
   const frontShoulderX = torsoX + torsoW - 1;
-  const frontShoulderY = torsoY + 1;
+  const frontShoulderY = torsoY + Math.round(1 * scale);
   const frontRad = (pose.armFront * Math.PI) / 180;
   const frontHandX = Math.round(frontShoulderX + Math.sin(frontRad) * armLen);
   const frontHandY = Math.round(frontShoulderY + Math.cos(frontRad) * armLen);
@@ -813,76 +1079,141 @@ export function drawCharacterCelFromSpec(
     const ax = Math.round(frontShoulderX + (frontHandX - frontShoulderX) * (s / armLen));
     const ay = Math.round(frontShoulderY + (frontHandY - frontShoulderY) * (s / armLen));
     setBodyPixel(ax, ay, ramps.primary.base);
+    if (L.armThickness >= 2) setBodyPixel(ax, ay + 1, ramps.primary.base);
   }
-  setBodyPixel(frontHandX, frontHandY, ramps.skin.base);
+  setBodyPixel(frontHandX, frontHandY, accessories.includes('gloves') ? ramps.secondary.light : ramps.skin.base);
 
-  // 9. Weapon
+  // ── Layer 8: Weapon ──
   if (spec.weapon !== 'none') {
     const wRad = (pose.weaponAngle * Math.PI) / 180;
     const dirX = Math.cos(wRad);
     const dirY = Math.sin(wRad);
+    const wScale = Math.round(scale);
+    const wVar = spec.variants?.weapon ?? 0;
 
     if (spec.weapon === 'sword') {
+      // 0: Standar, 1: Greatsword (lebih panjang & lebar), 2: Scimitar (lengkung), 3: Rapier (ramping)
+      const baseBlade = wVar === 1 ? 12 : wVar === 3 ? 10 : 9;
+      const bladeLen = Math.max(6, Math.round(baseBlade * scale));
       const guardPerpX = -dirY;
       const guardPerpY = dirX;
       setBodyPixel(frontHandX + guardPerpX, frontHandY + guardPerpY, ramps.accent.base);
       setBodyPixel(frontHandX - guardPerpX, frontHandY - guardPerpY, ramps.accent.base);
-
-      for (let b = 1; b <= 9; b++) {
-        const bx = Math.round(frontHandX + dirX * b);
-        const by = Math.round(frontHandY + dirY * b);
-        setBodyPixel(bx, by, b === 9 ? pal.highlight : ramps.metal.base);
+      if (wVar === 1) {
+        setBodyPixel(frontHandX + guardPerpX * 2, frontHandY + guardPerpY * 2, ramps.accent.shadow);
+        setBodyPixel(frontHandX - guardPerpX * 2, frontHandY - guardPerpY * 2, ramps.accent.shadow);
+      }
+      for (let b = 1; b <= bladeLen; b++) {
+        let bx = Math.round(frontHandX + dirX * b);
+        let by = Math.round(frontHandY + dirY * b);
+        if (wVar === 2) {
+          const curve = Math.round(Math.sin((b / bladeLen) * Math.PI * 0.8) * 2 * scale);
+          bx += Math.round(guardPerpX * curve);
+          by += Math.round(guardPerpY * curve);
+        }
+        setBodyPixel(bx, by, b === bladeLen ? pal.highlight : ramps.metal.base);
+        if (wVar === 1 && b < bladeLen - 1) {
+          setBodyPixel(bx + guardPerpX, by + guardPerpY, ramps.metal.shadow);
+        }
       }
     } else if (spec.weapon === 'axe') {
-      for (let h = 1; h <= 8; h++) {
+      // 0: Bilah tunggal, 1: Bilah ganda, 2: Halberd (tombak kapak), 3: Tomahawk
+      const handleBase = wVar === 2 ? 11 : wVar === 3 ? 5 : 8;
+      const handleLen = Math.max(4, Math.round(handleBase * scale));
+      for (let h = 1; h <= handleLen; h++) {
         const hx = Math.round(frontHandX + dirX * h);
         const hy = Math.round(frontHandY + dirY * h);
         setBodyPixel(hx, hy, ramps.secondary.shadow);
       }
-      const tipX = Math.round(frontHandX + dirX * 8);
-      const tipY = Math.round(frontHandY + dirY * 8);
+      const tipX = Math.round(frontHandX + dirX * handleLen);
+      const tipY = Math.round(frontHandY + dirY * handleLen);
       setBodyPixel(tipX, tipY, ramps.metal.base);
       setBodyPixel(tipX - 1, tipY - 1, ramps.metal.light);
       setBodyPixel(tipX, tipY - 2, pal.highlight);
       setBodyPixel(tipX + 1, tipY - 1, ramps.metal.light);
+      if (wVar === 1) {
+        setBodyPixel(tipX - 1, tipY + 1, ramps.metal.light);
+        setBodyPixel(tipX, tipY + 2, pal.highlight);
+        setBodyPixel(tipX + 1, tipY + 1, ramps.metal.light);
+      } else if (wVar === 2) {
+        setBodyPixel(Math.round(tipX + dirX * 2), Math.round(tipY + dirY * 2), pal.highlight);
+      }
     } else if (spec.weapon === 'staff') {
-      for (let s = -6; s <= 9; s++) {
+      // 0: Orb, 1: Crystal cabang, 2: Sabit/Crescent, 3: Bintang
+      const staffUp = Math.max(4, Math.round(6 * scale));
+      const staffDown = Math.max(6, Math.round(9 * scale));
+      for (let s = -staffUp; s <= staffDown; s++) {
         const sx = Math.round(frontHandX + dirX * s);
         const sy = Math.round(frontHandY + dirY * s);
         setBodyPixel(sx, sy, ramps.secondary.shadow);
       }
-      const topX = Math.round(frontHandX + dirX * 9);
-      const topY = Math.round(frontHandY + dirY * 9);
-      setBodyPixel(topX, topY, ramps.accent.base);
-      setBodyPixel(topX, topY - 1, ramps.accent.light);
-      setBodyPixel(topX + 1, topY, pal.highlight);
+      const topX = Math.round(frontHandX + dirX * staffDown);
+      const topY = Math.round(frontHandY + dirY * staffDown);
+      if (wVar === 2) {
+        setBodyPixel(topX, topY, ramps.accent.base);
+        setBodyPixel(topX - 1, topY - 1, ramps.accent.light);
+        setBodyPixel(topX - 1, topY - 2, pal.highlight);
+        setBodyPixel(topX, topY - 3, ramps.accent.base);
+      } else if (wVar === 1) {
+        setBodyPixel(topX, topY, ramps.accent.base);
+        setBodyPixel(topX - 1, topY - 1, ramps.accent.light);
+        setBodyPixel(topX + 1, topY - 1, ramps.accent.light);
+        setBodyPixel(topX, topY - 2, pal.highlight);
+      } else {
+        setBodyPixel(topX, topY, ramps.accent.base);
+        setBodyPixel(topX, topY - 1, ramps.accent.light);
+        setBodyPixel(topX + 1, topY, pal.highlight);
+      }
     } else if (spec.weapon === 'bow') {
-      for (let a = -4; a <= 4; a++) {
-        const curveX = Math.round(frontHandX + dirX * 2 + Math.abs(a) * 0.5);
+      // 0: Shortbow, 1: Longbow, 2: Recurve, 3: Glowing bow
+      const bowSpanBase = wVar === 1 ? 6 : wVar === 0 ? 3 : 4;
+      const bowSpan = Math.max(3, Math.round(bowSpanBase * scale));
+      for (let a = -bowSpan; a <= bowSpan; a++) {
+        const curveX = Math.round(frontHandX + dirX * 2 * wScale + Math.abs(a) * (wVar === 2 ? 0.75 : 0.5));
         const curveY = Math.round(frontHandY + a);
-        setBodyPixel(curveX, curveY, ramps.secondary.base);
+        setBodyPixel(curveX, curveY, wVar === 3 ? ramps.accent.light : ramps.secondary.base);
         setBodyPixel(frontHandX - 1, curveY, ramps.secondary.light);
       }
     } else if (spec.weapon === 'dagger') {
-      for (let d = 1; d <= 4; d++) {
-        const dx = Math.round(frontHandX + dirX * d);
-        const dy = Math.round(frontHandY + dirY * d);
-        setBodyPixel(dx, dy, d === 4 ? pal.highlight : ramps.metal.light);
+      // 0: Standar, 1: Kris (bergelombang), 2: Stiletto (panjang), 3: Poison glow
+      const dagBase = wVar === 2 ? 5 : 4;
+      const dagLen = Math.max(3, Math.round(dagBase * scale));
+      for (let d = 1; d <= dagLen; d++) {
+        let dx2 = Math.round(frontHandX + dirX * d);
+        let dy2 = Math.round(frontHandY + dirY * d);
+        if (wVar === 1) {
+          const wave = (d % 2 === 0 ? 1 : -1) * Math.round(1 * scale);
+          dx2 += Math.round(-dirY * wave);
+          dy2 += Math.round(dirX * wave);
+        }
+        setBodyPixel(dx2, dy2, d === dagLen ? pal.highlight : wVar === 3 ? ramps.accent.light : ramps.metal.light);
       }
     }
   }
 
-  // 10. Slash FX
+  // Trait: tail (sways with capeSway)
+  if (traits.includes('tail')) {
+    const tailBaseX = cx - Math.floor(torsoW / 2) - Math.round(1 * scale);
+    const tailBaseY = hipYPosed;
+    const tailLen = Math.max(3, Math.round(5 * scale));
+    for (let t = 0; t < tailLen; t++) {
+      const sway = Math.round(pose.capeSway * (t + 1) * 0.3 * scale);
+      setBodyPixel(tailBaseX - t - sway, tailBaseY + Math.round(t * 0.5), ramps.skin.shadow);
+      if (t < tailLen - 1) setBodyPixel(tailBaseX - t - sway, tailBaseY + Math.round(t * 0.5) + 1, ramps.skin.base);
+    }
+  }
+
+  // ── Layer 9: Slash FX ──
   if (pose.slashFx > 0) {
     if (pose.slashFx === 1) {
-      setFxPixel(frontHandX + 4, frontHandY - 4, ramps.accent.light);
-      setFxPixel(frontHandX + 5, frontHandY - 5, pal.highlight);
+      setFxPixel(frontHandX + Math.round(4 * scale), frontHandY - Math.round(4 * scale), ramps.accent.light);
+      setFxPixel(frontHandX + Math.round(5 * scale), frontHandY - Math.round(5 * scale), pal.highlight);
     } else if (pose.slashFx === 2) {
-      const arcPoints = 12;
+      const arcPoints = Math.max(8, Math.round(12 * scale));
       for (let p = 0; p < arcPoints; p++) {
         const t = p / (arcPoints - 1);
         const angle = -Math.PI * 0.4 + t * Math.PI * 0.8;
-        const radius = 10;
+        const radius = Math.round(10 * scale);
         const ax = Math.round(frontHandX + Math.cos(angle) * radius);
         const ay = Math.round(frontHandY + Math.sin(angle) * radius);
         setFxPixel(ax, ay, pal.highlight);
@@ -890,8 +1221,8 @@ export function drawCharacterCelFromSpec(
         setFxPixel(ax, ay + 1, ramps.accent.base);
       }
     } else if (pose.slashFx === 3) {
-      setFxPixel(frontHandX + 7, frontHandY + 2, ramps.accent.light);
-      setFxPixel(frontHandX + 9, frontHandY + 4, ramps.accent.base);
+      setFxPixel(frontHandX + Math.round(7 * scale), frontHandY + Math.round(2 * scale), ramps.accent.light);
+      setFxPixel(frontHandX + Math.round(9 * scale), frontHandY + Math.round(4 * scale), ramps.accent.base);
     }
   }
 
