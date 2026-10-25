@@ -764,7 +764,7 @@ export function drawCharacterCelFromSpec(
   }
 
   // ── Layer 1: Back Leg ──
-  const backLegX = cx - Math.floor(torsoW / 2) + Math.round(pose.legBackX * scale);
+  const backLegX = torsoX + Math.round(pose.legBackX * scale);
   const backLegGround = groundY - Math.round(pose.legBackLift * scale);
   const backLegLen = Math.max(1, backLegGround - hipYPosed - Math.round(2 * scale));
   drawBodyRect(backLegX, hipYPosed, legW, backLegLen, ramps.secondary.shadow);
@@ -826,6 +826,10 @@ export function drawCharacterCelFromSpec(
     setBodyPixel(cx, torsoY + Math.round(3 * scale), ramps.accent.light);
   }
 
+  // Pelvis / Hips connector under belt
+  const pelvisH = Math.max(1, Math.round(1.5 * scale));
+  drawBodyRect(torsoX + 1, hipYPosed, torsoW - 2, pelvisH, ramps.secondary.base);
+
   // Shoulder pad accessory
   if (accessories.includes('shoulder_pad')) {
     const spW = Math.max(2, Math.round(3 * scale));
@@ -839,7 +843,7 @@ export function drawCharacterCelFromSpec(
   setBodyPixel(cx, hipYPosed - Math.round(1 * scale), accessories.includes('belt') ? ramps.accent.light : ramps.accent.base);
 
   // ── Layer 4: Front Leg ──
-  const frontLegX = cx + Math.round((1 + pose.legFrontX) * scale);
+  const frontLegX = torsoX + torsoW - legW + Math.round(pose.legFrontX * scale);
   const frontLegGround = groundY - Math.round(pose.legFrontLift * scale);
   const frontLegLen = Math.max(1, frontLegGround - hipYPosed - Math.round(2 * scale));
   drawBodyRect(frontLegX, hipYPosed, legW, frontLegLen, ramps.secondary.base);
@@ -873,13 +877,13 @@ export function drawCharacterCelFromSpec(
   setBodyPixel(headX, headY + headRInt, ramps.skin.shadow);
   setBodyPixel(headX - 1, headY + headRInt, ramps.skin.shadow);
 
-  // Hair rendering (5 styles)
+  // Hair rendering (5 styles + anime clumped locks)
   if (spec.head === 'bare') {
     if (hairStyle === 'none') {
       // Bald — just skin, add highlight
       setBodyPixel(headX, headY - headRInt, ramps.skin.light);
     } else if (hairStyle === 'short') {
-      // Short hair — top hemisphere
+      // Short anime hair — top hemisphere with front bang and sideburn
       for (let dy = -headRInt; dy <= 0; dy++) {
         for (let dx = -headRInt; dx <= headRInt; dx++) {
           if (dx * dx + dy * dy <= headR * headR) {
@@ -888,8 +892,14 @@ export function drawCharacterCelFromSpec(
         }
       }
       setBodyPixel(headX, headY - headRInt, ramps.hair.light);
+      // Front bangs over forehead
+      setBodyPixel(headX + 1, headY - 1, ramps.hair.base);
+      setBodyPixel(headX + 2, headY - 1, ramps.hair.base);
+      setBodyPixel(headX, headY - 1, ramps.hair.light);
+      // Back tuft
+      setBodyPixel(headX - headRInt - 1, headY - 1, ramps.hair.base);
     } else if (hairStyle === 'spiky') {
-      // Spiky hair — top with spikes jutting upward
+      // Spiky / Jabrik anime hair — voluminous with layered tufts, bangs, and back spikes
       for (let dy = -headRInt; dy <= 0; dy++) {
         for (let dx = -headRInt; dx <= headRInt; dx++) {
           if (dx * dx + dy * dy <= headR * headR) {
@@ -897,7 +907,7 @@ export function drawCharacterCelFromSpec(
           }
         }
       }
-      // Spikes
+      // Crown spikes (top-right and center peaks)
       const spikeH = Math.max(2, Math.round(3 * scale));
       for (let s = 0; s < spikeH; s++) {
         setBodyPixel(headX - 1, headY - headRInt - s - 1, ramps.hair.base);
@@ -905,6 +915,20 @@ export function drawCharacterCelFromSpec(
         if (s < spikeH - 1) setBodyPixel(headX, headY - headRInt - s - 2, ramps.hair.light);
       }
       setBodyPixel(headX + 2, headY - headRInt - 1, ramps.hair.shadow);
+      setBodyPixel(headX - 2, headY - headRInt - 1, ramps.hair.shadow);
+
+      // Back spikes jutting leftwards behind head
+      setBodyPixel(headX - headRInt - 1, headY - 2, ramps.hair.base);
+      setBodyPixel(headX - headRInt - 2, headY - 2, ramps.hair.shadow);
+      setBodyPixel(headX - headRInt - 1, headY - 1, ramps.hair.base);
+      setBodyPixel(headX - headRInt - 2, headY, ramps.hair.shadow);
+      setBodyPixel(headX - headRInt - 1, headY + 1, ramps.hair.shadow);
+
+      // Forehead bangs and side tufts
+      setBodyPixel(headX + 1, headY - 1, ramps.hair.base);
+      setBodyPixel(headX + 2, headY - 1, ramps.hair.base);
+      setBodyPixel(headX, headY - 1, ramps.hair.light);
+      setBodyPixel(headX + 2, headY - 2, ramps.hair.light);
     } else if (hairStyle === 'long') {
       // Long flowing hair
       for (let dy = -headRInt; dy <= 0; dy++) {
@@ -922,6 +946,8 @@ export function drawCharacterCelFromSpec(
         if (f < flowLen) setBodyPixel(headX - headRInt + 1, headY + f, ramps.hair.base);
       }
       setBodyPixel(headX, headY - headRInt, ramps.hair.light);
+      // Front side bang
+      setBodyPixel(headX + 1, headY - 1, ramps.hair.base);
     } else if (hairStyle === 'jambul') {
       // Jambul (spiky crest/mohawk)
       for (let dy = -headRInt; dy <= 0; dy++) {
@@ -931,7 +957,7 @@ export function drawCharacterCelFromSpec(
           }
         }
       }
-      // Tall central crest
+      // Tall central crest with backward sweep
       const crestH = Math.max(3, Math.round(4 * scale));
       for (let c = 0; c < crestH; c++) {
         setBodyPixel(headX, headY - headRInt - c - 1, ramps.hair.base);
@@ -939,6 +965,9 @@ export function drawCharacterCelFromSpec(
         setBodyPixel(headX + 1, headY - headRInt - c, ramps.hair.light);
       }
       setBodyPixel(headX, headY - headRInt - crestH, ramps.hair.light);
+      // Back tufts
+      setBodyPixel(headX - headRInt - 1, headY - 1, ramps.hair.shadow);
+      setBodyPixel(headX + 1, headY - 1, ramps.hair.base);
     }
 
     // Goblin pointy ears (from archetype)
@@ -1028,7 +1057,7 @@ export function drawCharacterCelFromSpec(
     setBodyPixel(headX, headY + headRInt + beardLen + 1, ramps.hair.shadow);
   }
 
-  // Eyes & expression (3 explicit variants: 0: dot+glint, 1: slit/focused, 2: wide anime round, 3: visor/eyepatch)
+  // Eyes & expression (3/4 anime eyes with sclera, pupil, highlight, and eyebrow)
   if (spec.head !== 'helmet_closed') {
     const eyeX = headX + Math.round(1 * scale);
     const eyeY = headY;
@@ -1048,23 +1077,40 @@ export function drawCharacterCelFromSpec(
       setBodyPixel(eyeX, eyeY, ramps.secondary.shadow);
       setBodyPixel(eyeX + 1, eyeY - 1, ramps.metal.light);
     } else {
-      // Standard dot eye with glint
-      setBodyPixel(eyeX, eyeY, pal.outline);
-      setBodyPixel(eyeX + 1, eyeY - 1, pal.highlight);
+      // Expressive 3/4 Anime Eye: eyebrow + dark upper lash + white sclera + dark pupil + catchlight
+      // Eyebrow
+      setBodyPixel(eyeX - 1, eyeY - 1, pal.outline);
+      setBodyPixel(eyeX, eyeY - 1, pal.outline);
+      // Eye body: Sclera & pupil
+      setBodyPixel(eyeX, eyeY, pal.highlight); // White sclera
+      setBodyPixel(eyeX + 1, eyeY, pal.outline); // Dark pupil
+      setBodyPixel(eyeX + 1, eyeY - 1, pal.highlight); // Glint
+      // Mouth/chin hint
+      setBodyPixel(headX + 1, headY + headRInt - 1, ramps.skin.shadow);
     }
   }
 
-  // Scarf accessory (around neck)
+  // Scarf accessory (around neck, trailing gracefully to the LEFT behind the character)
   if (accessories.includes('scarf')) {
-    const scarfY = headY + headRInt + 1;
+    const scarfY = headY + headRInt;
     const scarfW = Math.max(3, torsoW - Math.round(1 * scale));
-    drawBodyRect(cx - Math.floor(scarfW / 2), scarfY, scarfW, Math.max(1, Math.round(2 * scale)), ramps.accent.base);
-    // Trailing tail with cape sway
-    const tailLen = Math.max(2, Math.round(3 * scale));
-    for (let t = 0; t < tailLen; t++) {
-      const sway = Math.round(pose.capeSway * (t + 1) * 0.5 * scale);
-      setBodyPixel(cx + Math.floor(scarfW / 2) + t + sway, scarfY + t, ramps.accent.base);
-      setBodyPixel(cx + Math.floor(scarfW / 2) + t + sway, scarfY + t + 1, ramps.accent.shadow);
+    const cowlX = cx - Math.floor(scarfW / 2);
+    // Voluminous cowl around the neck
+    drawBodyRect(cowlX, scarfY, scarfW, Math.max(1, Math.round(2 * scale)), ramps.accent.base);
+    setBodyPixel(cowlX, scarfY, ramps.accent.light);
+    setBodyPixel(cowlX + scarfW - 1, scarfY + 1, ramps.accent.shadow);
+
+    // Two trailing fluttering tails waving backwards (to the LEFT)
+    const tailLen = Math.max(3, Math.round(5 * scale));
+    for (let t = 1; t <= tailLen; t++) {
+      const sway = Math.round(pose.capeSway * t * 0.4 * scale);
+      // Upper tail
+      setBodyPixel(cowlX - t, scarfY + Math.round(t * 0.3) + sway, ramps.accent.base);
+      setBodyPixel(cowlX - t, scarfY + Math.round(t * 0.3) + sway + 1, ramps.accent.shadow);
+      // Lower secondary ribbon tail
+      if (t <= tailLen - 1) {
+        setBodyPixel(cowlX - t - 1, scarfY + Math.round(t * 0.5) + sway + 1, ramps.accent.shadow);
+      }
     }
   }
 
@@ -1074,14 +1120,19 @@ export function drawCharacterCelFromSpec(
   const frontRad = (pose.armFront * Math.PI) / 180;
   const frontHandX = Math.round(frontShoulderX + Math.sin(frontRad) * armLen);
   const frontHandY = Math.round(frontShoulderY + Math.cos(frontRad) * armLen);
+  const armThick = Math.max(1, Math.round(scale));
 
   for (let s = 0; s <= armLen; s++) {
     const ax = Math.round(frontShoulderX + (frontHandX - frontShoulderX) * (s / armLen));
     const ay = Math.round(frontShoulderY + (frontHandY - frontShoulderY) * (s / armLen));
-    setBodyPixel(ax, ay, ramps.primary.base);
-    if (L.armThickness >= 2) setBodyPixel(ax, ay + 1, ramps.primary.base);
+    for (let th = 0; th < armThick; th++) {
+      setBodyPixel(ax, ay + th, ramps.primary.base);
+      if (L.armThickness >= 2) setBodyPixel(ax, ay + th + 1, ramps.primary.base);
+    }
   }
-  setBodyPixel(frontHandX, frontHandY, accessories.includes('gloves') ? ramps.secondary.light : ramps.skin.base);
+  // Hand / Gauntlet
+  const handR = Math.max(1, Math.round(scale));
+  drawBodyRect(frontHandX - Math.floor(handR / 2), frontHandY - Math.floor(handR / 2), handR + 1, handR + 1, accessories.includes('gloves') ? ramps.secondary.light : ramps.skin.base);
 
   // ── Layer 8: Weapon ──
   if (spec.weapon !== 'none') {
@@ -1097,12 +1148,18 @@ export function drawCharacterCelFromSpec(
       const bladeLen = Math.max(6, Math.round(baseBlade * scale));
       const guardPerpX = -dirY;
       const guardPerpY = dirX;
-      setBodyPixel(frontHandX + guardPerpX, frontHandY + guardPerpY, ramps.accent.base);
-      setBodyPixel(frontHandX - guardPerpX, frontHandY - guardPerpY, ramps.accent.base);
-      if (wVar === 1) {
-        setBodyPixel(frontHandX + guardPerpX * 2, frontHandY + guardPerpY * 2, ramps.accent.shadow);
-        setBodyPixel(frontHandX - guardPerpX * 2, frontHandY - guardPerpY * 2, ramps.accent.shadow);
+      const guardLen = Math.max(1, Math.round(1.5 * scale));
+
+      for (let g = 1; g <= guardLen; g++) {
+        setBodyPixel(frontHandX + Math.round(guardPerpX * g), frontHandY + Math.round(guardPerpY * g), ramps.accent.base);
+        setBodyPixel(frontHandX - Math.round(guardPerpX * g), frontHandY - Math.round(guardPerpY * g), ramps.accent.base);
       }
+      if (wVar === 1) {
+        setBodyPixel(frontHandX + Math.round(guardPerpX * (guardLen + 1)), frontHandY + Math.round(guardPerpY * (guardLen + 1)), ramps.accent.shadow);
+        setBodyPixel(frontHandX - Math.round(guardPerpX * (guardLen + 1)), frontHandY - Math.round(guardPerpY * (guardLen + 1)), ramps.accent.shadow);
+      }
+
+      const bladeThick = Math.max(1, Math.round(scale));
       for (let b = 1; b <= bladeLen; b++) {
         let bx = Math.round(frontHandX + dirX * b);
         let by = Math.round(frontHandY + dirY * b);
@@ -1111,9 +1168,13 @@ export function drawCharacterCelFromSpec(
           bx += Math.round(guardPerpX * curve);
           by += Math.round(guardPerpY * curve);
         }
-        setBodyPixel(bx, by, b === bladeLen ? pal.highlight : ramps.metal.base);
+        for (let t = 0; t < bladeThick; t++) {
+          const tx = bx + Math.round(guardPerpX * t);
+          const ty = by + Math.round(guardPerpY * t);
+          setBodyPixel(tx, ty, b === bladeLen || t === 0 ? pal.highlight : ramps.metal.base);
+        }
         if (wVar === 1 && b < bladeLen - 1) {
-          setBodyPixel(bx + guardPerpX, by + guardPerpY, ramps.metal.shadow);
+          setBodyPixel(bx + Math.round(guardPerpX * bladeThick), by + Math.round(guardPerpY * bladeThick), ramps.metal.shadow);
         }
       }
     } else if (spec.weapon === 'axe') {

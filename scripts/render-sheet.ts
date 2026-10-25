@@ -434,7 +434,124 @@ async function renderDiversitySheet() {
   console.log(`Successfully generated ${outPath} (${totalWidth}x${totalHeight}px, ${pngBuffer.length} bytes)`);
 }
 
-renderDiversitySheet().catch(err => {
-  console.error('Failed to render diversity sheet:', err);
+async function renderHeroReferenceSheet() {
+  console.log('Generating Hero Reference Sprite Sheet (3x4 at 64x64) matching character_spritesheet_3x4.jpg...');
+
+  const spriteSize = 64;
+  const cols = 4;
+  const rows = 3;
+  const padding = 16;
+  const spacing = 8;
+  const headerHeight = 28;
+
+  const totalWidth = padding * 2 + cols * (spriteSize + spacing) - spacing;
+  const totalHeight = padding * 2 + headerHeight + rows * (spriteSize + spacing) - spacing;
+
+  const canvas: number[][][] = [];
+  for (let y = 0; y < totalHeight; y++) {
+    const row: number[][] = [];
+    for (let x = 0; x < totalWidth; x++) {
+      // Magenta chroma-key #ff00ff background like character_spritesheet_3x4.jpg
+      row.push([255, 0, 255, 255]);
+    }
+    canvas.push(row);
+  }
+
+  // Draw Header
+  drawText(canvas, 'HERO SPRITESHEET 3X4 (64PX CELL - MATCHING REFERENCE)', padding, padding + 2, [0, 0, 0, 255]);
+  drawText(canvas, 'ROW 1: IDLE (4F)  |  ROW 2: WALK (4F)  |  ROW 3: ATTACK (4F)', padding, padding + 14, [40, 40, 40, 255]);
+
+  const heroSpec: CharacterSpec = {
+    ...DEFAULT_SPEC,
+    name: 'Hero Adventurer',
+    archetype: 'fighter',
+    body: 'normal',
+    head: 'bare',
+    hairStyle: 'spiky',
+    weapon: 'sword',
+    offhand: 'none',
+    cape: 'none',
+    proportions: {
+      height: 'normal',
+      headSize: 'normal',
+      torsoWidth: 2,
+      legLength: 'normal',
+      armThickness: 1,
+    },
+    variants: {
+      hair: 1,
+      head: 0,
+      torso: 0,
+      weapon: 0,
+    },
+    traits: ['none'],
+    accessories: ['scarf', 'belt', 'boots'],
+    palette: {
+      skin: '#fed7aa',
+      hair: '#ea580c',
+      primary: '#16a34a',
+      secondary: '#2563eb',
+      accent: '#dc2626',
+      metal: '#e2e8f0',
+    },
+  };
+
+  const animRows = [
+    POSES.idle.slice(0, 4),
+    POSES.walk.slice(0, 4),
+    POSES.attack.slice(0, 4),
+  ];
+
+  for (let r = 0; r < rows; r++) {
+    const poses = animRows[r];
+    const rowY = padding + headerHeight + r * (spriteSize + spacing);
+
+    for (let c = 0; c < cols; c++) {
+      const pose = poses[c];
+      const { body, fx } = drawCharacterCelFromSpec(heroSpec, pose, spriteSize);
+      const postProcessed = postProcessFrame(body, fx, heroSpec, spriteSize - 4);
+      const cellX = padding + c * (spriteSize + spacing);
+
+      for (let py = 0; py < spriteSize; py++) {
+        for (let px = 0; px < spriteSize; px++) {
+          const hex = postProcessed[py][px];
+          if (hex !== 'transparent') {
+            const { r: cr, g: cg, b: cb, a: ca } = hexToRgba(hex);
+            const cy = rowY + py;
+            const cx = cellX + px;
+            canvas[cy][cx] = [cr, cg, cb, Math.round(ca * 255)];
+          }
+        }
+      }
+    }
+  }
+
+  const flat = new Uint8Array(totalWidth * totalHeight * 4);
+  let idx = 0;
+  for (let y = 0; y < totalHeight; y++) {
+    for (let x = 0; x < totalWidth; x++) {
+      const [r, g, b, a] = canvas[y][x];
+      flat[idx++] = r;
+      flat[idx++] = g;
+      flat[idx++] = b;
+      flat[idx++] = a;
+    }
+  }
+
+  const outDir = path.resolve(process.cwd(), 'out');
+  const pngBuffer = createPngBuffer(totalWidth, totalHeight, flat);
+  const outPath = path.join(outDir, 'hero-reference-sheet.png');
+  fs.writeFileSync(outPath, pngBuffer);
+
+  console.log(`Successfully generated ${outPath} (${totalWidth}x${totalHeight}px, ${pngBuffer.length} bytes)`);
+}
+
+async function main() {
+  await renderDiversitySheet();
+  await renderHeroReferenceSheet();
+}
+
+main().catch(err => {
+  console.error('Failed to render sheets:', err);
   process.exit(1);
 });
