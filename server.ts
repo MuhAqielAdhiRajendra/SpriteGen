@@ -236,9 +236,21 @@ app.post('/api/proxy/custom', async (req: Request, res: Response) => {
   }
 });
 
-// Diversity Guard memory: simpan 5 spec terakhir dan prompt terakhir
-const recentSpecs: CharacterSpec[] = [];
-let lastPrompt: string | null = null;
+// Diversity Guard session memory: simpan 5 spec terakhir dan prompt terakhir per sesi
+interface SessionHistory {
+  recentSpecs: CharacterSpec[];
+  lastPrompt: string | null;
+}
+const sessionStore = new Map<string, SessionHistory>();
+
+function getSessionHistory(sessionId: string): SessionHistory {
+  let session = sessionStore.get(sessionId);
+  if (!session) {
+    session = { recentSpecs: [], lastPrompt: null };
+    sessionStore.set(sessionId, session);
+  }
+  return session;
+}
 
 function checkDiversity(candidate: CharacterSpec, history: CharacterSpec[]): { isDiverse: boolean; minDiff: number } {
   if (history.length === 0) return { isDiverse: true, minDiff: 99 };
@@ -252,9 +264,31 @@ function checkDiversity(candidate: CharacterSpec, history: CharacterSpec[]): { i
   return { isDiverse: minDiff >= 3, minDiff };
 }
 
+function extractExplicitKeywords(pRaw: string): string[] {
+  const p = pRaw.toLowerCase();
+  const locked: string[] = [];
+  if (p.includes('pedang') || p.includes('sword')) locked.push('senjata: pedang/sword');
+  if (p.includes('kapak') || p.includes('axe')) locked.push('senjata: kapak/axe');
+  if (p.includes('panah') || p.includes('busur') || p.includes('bow')) locked.push('senjata: busur/bow');
+  if (p.includes('tongkat') || p.includes('staff')) locked.push('senjata: tongkat/staff');
+  if (p.includes('belati') || p.includes('dagger')) locked.push('senjata: belati/dagger');
+  if (p.includes('perisai') || p.includes('shield')) locked.push('perisai/shield');
+  if (p.includes('jubah') || p.includes('cape') || p.includes('mantel')) locked.push('jubah/cape');
+  if (p.includes('helm') || p.includes('helmet')) locked.push('helm/helmet');
+  if (p.includes('tudung') || p.includes('hood')) locked.push('tudung/hood');
+
+  const colors = ['merah', 'biru', 'hijau', 'kuning', 'hitam', 'putih', 'ungu', 'emas', 'perak', 'oranye', 'coklat', 'red', 'blue', 'green', 'yellow', 'black', 'white', 'purple', 'gold'];
+  for (const c of colors) {
+    if (p.includes(c)) locked.push(`warna: ${c}`);
+  }
+  return locked;
+}
+
 // 4. Gemini Generation & Art Director Endpoint (2-Step Vision + Spec + Diversity Guard)
 app.post('/api/gemini/generate', async (req: Request, res: Response) => {
-  const { prompt, referenceImage } = req.body;
+  const { prompt, referenceImage, sessionId: bodySessionId } = req.body;
+  const sessionId = String(req.headers['x-session-id'] || bodySessionId || 'default');
+  const session = getSessionHistory(sessionId);
   const gemini = getGeminiClient();
 
   if (!gemini) {
@@ -266,24 +300,16 @@ app.post('/api/gemini/generate', async (req: Request, res: Response) => {
     });
   }
 
-  // Validasi server-side untuk referenceImage (Tahap 1b)
+  let referenceError: string | null = null;
+  let referenceAnalysis: any = null;
+
+  // Validasi server-side untuk referenceImage (Langkah A)
   if (referenceImage) {
     const imgValidation = validateReferenceImagePayload(referenceImage);
     if (!imgValidation.valid) {
-      return res.status(400).json({
-        success: false,
-        source: 'fallback',
-        reason: `Validasi gambar referensi gagal: ${imgValidation.error}`,
-        spec: null
-      });
-    }
-  }
-
-  try {
-    let referenceAnalysis: any = null;
-
-    // Langkah A: Analisis Gambar Referensi (jika ada)
-    if (referenceImage && referenceImage.data && referenceImage.mimeType) {
+      referenceError = imgValidation.error || 'Validasi gambar referensi gagal';
+      console.warn('[Vision Reference Error]:', referenceError);
+    } else if (referenceImage.data && referenceImage.mimeType) {
       try {
         const rawBase64 = String(referenceImage.data).replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
         const visionResp = await gemini.models.generateContent({
@@ -311,13 +337,16 @@ app.post('/api/gemini/generate', async (req: Request, res: Response) => {
         const cleanVisionJson = visionText.replace(/```json/g, '').replace(/```/g, '').trim();
         referenceAnalysis = JSON.parse(cleanVisionJson);
 
-        // Log JSON hasil analisis referensi di konsol server (Tahap 1d)
+        // Log JSON hasil analisis referensi di konsol server
         console.log('[Vision Reference Analysis Result]:\n', JSON.stringify(referenceAnalysis, null, 2));
       } catch (visionErr: any) {
-        console.warn('Langkah A (Vision Analysis) gagal atau dilewati:', visionErr.message);
+        console.warn('Langkah A (Vision Analysis) gagal:', visionErr.message);
+        referenceError = `Analisis gambar referensi gagal: ${visionErr.message}`;
       }
     }
+  }
 
+  try {
     // Langkah B: Pembuatan CharacterSpec Lengkap
     let promptForSpec = prompt;
     if (referenceAnalysis) {
@@ -326,9 +355,13 @@ app.post('/api/gemini/generate', async (req: Request, res: Response) => {
 [DATA ANALISIS REFERENSI VISUAL]:
 ${JSON.stringify(referenceAnalysis, null, 2)}
 
-ATURAN PENTING:
+ATURAN PENTING & PEMETAAN EKSPLISIT:
 1. Jadikan hasil analisis referensi visual di atas sebagai acuan bentuk anatomi, proporsi, gaya rambut, pakaian, dan palet warna.
-2. Jika ada instruksi user di atas yang secara spesifik meminta perbedaan (misal warna lain atau senjata lain), perintah teks user MENANG dan menggantikan bagian referensi tersebut.`;
+2. Pemetaan eksplisit:
+   - Jika analisis referensi hairStyle bernilai 'hood' atau 'helmet', petakan ke field head ('hood' atau 'helmet_open' / 'helmet_closed').
+   - Jika ada accessory 'cape', petakan ke field cape ('short' atau 'long'), BUKAN ke array accessories.
+   - Field accessories HANYA boleh berisi elemen dari: 'scarf', 'belt', 'gloves', 'boots', 'shoulder_pad', 'backpack', 'quiver'.
+3. Jika ada instruksi user di atas yang secara spesifik meminta perbedaan (misal warna lain atau senjata lain), perintah teks user MENANG dan menggantikan bagian referensi tersebut.`;
     }
 
     const response = await gemini.models.generateContent({
@@ -389,40 +422,54 @@ ATURAN PENTING:
       });
     }
 
-    // Diversity Guard (Tahap 1a):
-    // HANYA aktif bila prompt BERBEDA dari request sebelumnya.
-    // Jika prompt sama persis (regenerate yang sama), jangan dipaksa berubah siluetnya.
-    const isDifferentPrompt = lastPrompt !== null && prompt.trim().toLowerCase() !== lastPrompt.trim().toLowerCase();
-    const diversityCheck = checkDiversity(spec, recentSpecs);
+    // Diversity Guard:
+    // (a) riwayat per sesi
+    // (b) hanya aktif bila prompt berbeda dari prompt sebelumnya
+    // (c) jangan mengubah field yang disebut eksplisit di prompt
+    // (d) hitung juga accessories, variants, archetype (lewat countSilhouetteDifferences)
+    // (e) cek ulang hasil retry, jika tetap mirip terima apa adanya
+    // (f) jangan jalankan guard bila referensi gambar dipakai
+    const hasReference = !!referenceAnalysis;
+    const isDifferentPrompt = session.lastPrompt !== null && prompt.trim().toLowerCase() !== session.lastPrompt.trim().toLowerCase();
 
-    if (isDifferentPrompt && !diversityCheck.isDiverse) {
-      try {
-        const diversityRetry = await gemini.models.generateContent({
-          model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
-          contents: `${promptForSpec}
+    if (!hasReference && isDifferentPrompt) {
+      const diversityCheck = checkDiversity(spec, session.recentSpecs);
+      if (!diversityCheck.isDiverse) {
+        try {
+          const lockedList = extractExplicitKeywords(prompt);
+          const lockedInstruction = lockedList.length > 0
+            ? `Field yang dikunci oleh prompt user: [${lockedList.join(', ')}]. JANGAN PERNAH mengubah elemen-elemen ini.`
+            : 'PENTING: Pertahankan semua elemen yang diminta secara jelas di prompt.';
+
+          const diversityRetry = await gemini.models.generateContent({
+            model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
+            contents: `${promptForSpec}
 
 [PERINGATAN DIVERSITY GUARD]: Prompt baru ini menghasilkan siluet yang terlalu mirip dengan karakter sesi sebelumnya (hanya beda ${diversityCheck.minDiff} aspek siluet).
 ATURAN RETRY DIVERSITY:
-1. PENTING: JANGAN mengubah elemen yang diminta secara EKSPLISIT oleh user di prompt (misal jika user minta pedang, tetap gunakan pedang; jika user minta jubah atau helm, pertahankan).
+1. ${lockedInstruction}
 2. UBAH MINIMAL 3 ASPEK SILUET LAINNYA yang tidak dikunci prompt, seperti:
    - proportions: height (short/normal/tall), headSize (small/normal/big), torsoWidth (1/2/3), legLength, armThickness
-   - body (slim/normal/heavy), cape, traits (horns, pointy_ears, tail, hunch, wings, beard), atau accessories.`,
-          config: {
-            systemInstruction: SPRITE_SYSTEM_PROMPT,
-            responseMimeType: 'application/json',
-            responseSchema: SPEC_JSON_SCHEMA as any,
-            temperature: 0.9
-          }
-        });
+   - variants: hair, head, torso, weapon (0..3)
+   - body (slim/normal/heavy), cape, hairStyle, traits (horns, pointy_ears, tail, hunch, wings, beard), atau accessories.`,
+            config: {
+              systemInstruction: SPRITE_SYSTEM_PROMPT,
+              responseMimeType: 'application/json',
+              responseSchema: SPEC_JSON_SCHEMA as any,
+              temperature: 0.9
+            }
+          });
 
-        const divText = diversityRetry.text || '';
-        const divParsed = JSON.parse(divText.replace(/```json/g, '').replace(/```/g, '').trim());
-        const divValid = validateSpec(divParsed);
-        if (divValid.spec) {
-          spec = divValid.spec;
+          const divText = diversityRetry.text || '';
+          const divParsed = JSON.parse(divText.replace(/```json/g, '').replace(/```/g, '').trim());
+          const divValid = validateSpec(divParsed);
+          if (divValid.spec) {
+            // Terima apa adanya (cek ulang tanpa looping)
+            spec = divValid.spec;
+          }
+        } catch (divErr: any) {
+          console.warn('Diversity guard retry skipped:', divErr.message);
         }
-      } catch (divErr: any) {
-        console.warn('Diversity guard retry skipped:', divErr.message);
       }
     }
 
@@ -432,16 +479,17 @@ ATURAN RETRY DIVERSITY:
       spec = applyReferenceAnalysisToSpec(spec, referenceAnalysis, prompt);
     }
 
-    // Simpan ke history recentSpecs (maks 5) dan catat lastPrompt
-    recentSpecs.push(spec);
-    if (recentSpecs.length > 5) recentSpecs.shift();
-    lastPrompt = prompt;
+    // Simpan ke session history (maks 5) dan catat lastPrompt
+    session.recentSpecs.push(spec);
+    if (session.recentSpecs.length > 5) session.recentSpecs.shift();
+    session.lastPrompt = prompt;
 
     return res.json({
       success: true,
       source: 'gemini',
-      usedReference: !!referenceAnalysis,
+      usedReference: !!referenceAnalysis && !referenceError,
       referenceAnalysis,
+      referenceError,
       spec,
       validationErrors: []
     });

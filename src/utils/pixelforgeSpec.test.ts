@@ -11,7 +11,8 @@ import {
   postProcessFrame,
   validateSequence,
   POSES,
-  drawCharacterCelFromSpec
+  drawCharacterCelFromSpec,
+  type CharacterSpec,
 } from './pixelEngine.ts';
 
 test('validateSpec verifies complete enum schema and hex colors', () => {
@@ -128,7 +129,7 @@ test('validateReferenceImagePayload enforces mimeType and 2MB compression limit'
   };
   const sizeResult = validateReferenceImagePayload(oversizedPayload);
   assert.equal(sizeResult.valid, false);
-  assert.match(sizeResult.error || '', /melebihi batas 2MB/);
+  assert.match(sizeResult.error || '', /melebihi batas 2\.8MB/);
 });
 
 test('fallback status format preserves source and reason without crashing', () => {
@@ -264,4 +265,199 @@ test('drawCharacterCelFromSpec renders all 5 hair styles and modular traits with
     assert.ok(hasPixels, 'Cel should contain rendered pixels');
   }
 });
+
+test('validateSpec handles both complete new fields and legacy/incomplete fields gracefully', async () => {
+  const { validateSpec, DEFAULT_SPEC } = await import('./pixelforgeSpec.ts');
+
+  // Complete spec with all new fields
+  const completeSpec = {
+    ...DEFAULT_SPEC,
+    proportions: {
+      height: 'tall',
+      headSize: 'small',
+      torsoWidth: 3,
+      legLength: 'long',
+      armThickness: 2,
+    },
+    variants: {
+      hair: 2,
+      head: 1,
+      torso: 2,
+      weapon: 1,
+    },
+    traits: ['horns', 'tail'],
+    accessories: ['shoulder_pad', 'boots'],
+    hairStyle: 'spiky',
+  };
+
+  const resComplete = validateSpec(completeSpec);
+  assert.equal(resComplete.errors.length, 0);
+  assert.ok(resComplete.spec);
+  assert.ok(resComplete.spec.proportions);
+  assert.equal(resComplete.spec.proportions.height, 'tall');
+  assert.ok(resComplete.spec.variants);
+  assert.equal(resComplete.spec.variants.hair, 2);
+  assert.deepEqual(resComplete.spec.traits, ['horns', 'tail']);
+  assert.deepEqual(resComplete.spec.accessories, ['shoulder_pad', 'boots']);
+  assert.equal(resComplete.spec.hairStyle, 'spiky');
+
+  // Legacy/incomplete spec omitting all new fields
+  const legacySpec = {
+    name: 'OldHero',
+    archetype: 'fighter',
+    body: 'normal',
+    head: 'bare',
+    weapon: 'sword',
+    offhand: 'none',
+    cape: 'none',
+    palette: {
+      skin: '#ffd1a4',
+      hair: '#3a2312',
+      primary: '#2c5282',
+      secondary: '#1a365d',
+      accent: '#ecc94b',
+      metal: '#cbd5e0',
+    },
+    animations: ['idle', 'walk'],
+  };
+
+  const resLegacy = validateSpec(legacySpec);
+  assert.equal(resLegacy.errors.length, 0);
+  assert.ok(resLegacy.spec);
+  assert.ok(resLegacy.spec.proportions);
+  assert.equal(resLegacy.spec.proportions.height, 'normal');
+  assert.ok(resLegacy.spec.variants);
+  assert.deepEqual(resLegacy.spec.traits, ['none']);
+  assert.deepEqual(resLegacy.spec.accessories, []);
+  assert.equal(resLegacy.spec.hairStyle, 'short');
+});
+
+test('8 diverse specs have silhouette average IoU < 0.60 and no pair > 0.85', async () => {
+  const { drawCharacterCelFromSpec, postProcessFrame, POSES } = await import('./pixelEngine.ts');
+  const { DEFAULT_SPEC } = await import('./pixelforgeSpec.ts');
+
+  const specs: CharacterSpec[] = [
+    // 1. Ksatria Heavy
+    { ...DEFAULT_SPEC, name: 'Ksatria', archetype: 'fighter', body: 'heavy', proportions: { height: 'tall', headSize: 'small', torsoWidth: 3, legLength: 'long', armThickness: 2 }, head: 'helmet_closed', weapon: 'sword', offhand: 'shield', cape: 'short', hairStyle: 'none', traits: ['none'], accessories: ['shoulder_pad', 'belt', 'boots'] },
+    // 2. Goblin Rogue
+    { ...DEFAULT_SPEC, name: 'Goblin', archetype: 'goblin', body: 'slim', proportions: { height: 'short', headSize: 'big', torsoWidth: 1, legLength: 'short', armThickness: 1 }, head: 'bare', weapon: 'dagger', offhand: 'none', cape: 'none', hairStyle: 'short', traits: ['pointy_ears'], accessories: ['belt'] },
+    // 3. Penyihir Agung
+    { ...DEFAULT_SPEC, name: 'Penyihir', archetype: 'mage', body: 'slim', proportions: { height: 'tall', headSize: 'normal', torsoWidth: 1, legLength: 'long', armThickness: 1 }, head: 'hood', weapon: 'staff', offhand: 'none', cape: 'long', hairStyle: 'none', traits: ['none'], accessories: [] },
+    // 4. Pemanah Elf
+    { ...DEFAULT_SPEC, name: 'Pemanah', archetype: 'archer', body: 'slim', proportions: { height: 'normal', headSize: 'normal', torsoWidth: 1, legLength: 'normal', armThickness: 1 }, head: 'bare', weapon: 'bow', offhand: 'none', cape: 'none', hairStyle: 'long', traits: ['pointy_ears'], accessories: ['quiver', 'boots'] },
+    // 5. Zombie Bungkuk
+    { ...DEFAULT_SPEC, name: 'Zombie', archetype: 'zombie', body: 'normal', proportions: { height: 'short', headSize: 'normal', torsoWidth: 2, legLength: 'short', armThickness: 1 }, head: 'bare', weapon: 'none', offhand: 'none', cape: 'none', hairStyle: 'short', traits: ['hunch'], accessories: [] },
+    // 6. Hero Jambul
+    { ...DEFAULT_SPEC, name: 'Hero', archetype: 'fighter', body: 'normal', proportions: { height: 'normal', headSize: 'normal', torsoWidth: 2, legLength: 'normal', armThickness: 1 }, head: 'bare', weapon: 'sword', offhand: 'none', cape: 'none', hairStyle: 'jambul', traits: ['none'], accessories: ['scarf', 'belt', 'boots'] },
+    // 7. Ninja Bayangan
+    { ...DEFAULT_SPEC, name: 'Ninja', archetype: 'fighter', body: 'slim', proportions: { height: 'normal', headSize: 'small', torsoWidth: 1, legLength: 'long', armThickness: 1 }, head: 'hood', weapon: 'dagger', offhand: 'none', cape: 'none', hairStyle: 'none', traits: ['wings'], accessories: ['scarf', 'gloves', 'boots'] },
+    // 8. Kurcaci Berjenggot
+    { ...DEFAULT_SPEC, name: 'Kurcaci', archetype: 'fighter', body: 'heavy', proportions: { height: 'short', headSize: 'normal', torsoWidth: 3, legLength: 'short', armThickness: 2 }, head: 'helmet_open', weapon: 'axe', offhand: 'shield', cape: 'short', hairStyle: 'none', traits: ['beard'], accessories: ['belt', 'boots'] },
+  ];
+
+  const frames = specs.map(s => {
+    const { body, fx } = drawCharacterCelFromSpec(s, POSES.idle[0], 32);
+    return postProcessFrame(body, fx, s, 30);
+  });
+
+  function getIoU(f1: string[][], f2: string[][]): number {
+    let inter = 0;
+    let union = 0;
+    for (let y = 0; y < 32; y++) {
+      for (let x = 0; x < 32; x++) {
+        const a = f1[y][x] !== 'transparent';
+        const b = f2[y][x] !== 'transparent';
+        if (a && b) inter++;
+        if (a || b) union++;
+      }
+    }
+    return union === 0 ? 0 : inter / union;
+  }
+
+  let totalIoU = 0;
+  let count = 0;
+  let maxIoU = 0;
+
+  for (let i = 0; i < frames.length; i++) {
+    for (let j = i + 1; j < frames.length; j++) {
+      const iou = getIoU(frames[i], frames[j]);
+      totalIoU += iou;
+      count++;
+      if (iou > maxIoU) maxIoU = iou;
+      assert.ok(
+        iou <= 0.85,
+        `Pair ${specs[i].name} vs ${specs[j].name} IoU (${iou.toFixed(3)}) exceeds max 0.85 threshold`
+      );
+    }
+  }
+
+  const avgIoU = totalIoU / count;
+  assert.ok(
+    avgIoU < 0.60,
+    `Average silhouette IoU (${avgIoU.toFixed(3)}) exceeds target 0.60 threshold`
+  );
+});
+
+test('specs with different proportions produce different frames', async () => {
+  const { drawCharacterCelFromSpec, POSES } = await import('./pixelEngine.ts');
+  const { DEFAULT_SPEC } = await import('./pixelforgeSpec.ts');
+
+  const tallSpec = {
+    ...DEFAULT_SPEC,
+    proportions: {
+      ...DEFAULT_SPEC.proportions!,
+      height: 'tall' as const,
+      torsoWidth: 3 as const,
+    },
+  };
+
+  const shortSpec = {
+    ...DEFAULT_SPEC,
+    proportions: {
+      ...DEFAULT_SPEC.proportions!,
+      height: 'short' as const,
+      torsoWidth: 1 as const,
+    },
+  };
+
+  const frameTall = drawCharacterCelFromSpec(tallSpec, POSES.idle[0], 32).body;
+  const frameShort = drawCharacterCelFromSpec(shortSpec, POSES.idle[0], 32).body;
+
+  let differs = false;
+  for (let y = 0; y < 32; y++) {
+    for (let x = 0; x < 32; x++) {
+      if (frameTall[y][x] !== frameShort[y][x]) {
+        differs = true;
+        break;
+      }
+    }
+    if (differs) break;
+  }
+  assert.ok(differs, 'Frames with different proportions must differ in rendered pixels');
+});
+
+test('validateSequence confirms animation consistency across idle, walk, attack at size 32, 64, 128', async () => {
+  const { drawCharacterCelFromSpec, postProcessFrame, validateSequence, POSES } = await import('./pixelEngine.ts');
+  const { DEFAULT_SPEC } = await import('./pixelforgeSpec.ts');
+
+  const testSizes = [32, 64, 128];
+  const testAnimations = ['idle', 'walk', 'attack'] as const;
+
+  for (const size of testSizes) {
+    for (const anim of testAnimations) {
+      const poses = POSES[anim];
+      const frames = poses.map(pose => {
+        const { body, fx } = drawCharacterCelFromSpec(DEFAULT_SPEC, pose, size);
+        return postProcessFrame(body, fx, DEFAULT_SPEC, size - Math.round(2 * (size / 32)));
+      });
+
+      const check = validateSequence(frames, size);
+      assert.ok(
+        check.ok,
+        `Validation failed for anim ${anim} at size ${size}: ${check.errors.join(', ')}`
+      );
+    }
+  }
+});
+
 

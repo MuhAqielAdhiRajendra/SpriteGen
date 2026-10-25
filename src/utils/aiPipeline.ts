@@ -80,6 +80,10 @@ export async function executeSpriteGeneration(
 
   let step1Status: 'success' | 'warning' = 'success';
 
+  let usedReference = false;
+  let referenceAnalysisData: any = null;
+  let referenceErrorMsg: string | null = null;
+
   try {
     if (providerConfig.type === 'gemini') {
       const resp = await fetch('/api/gemini/generate', {
@@ -101,13 +105,22 @@ export async function executeSpriteGeneration(
 
       if (resp && resp.ok) {
         const data = await resp.json();
+        usedReference = !!data.usedReference;
+        referenceAnalysisData = data.referenceAnalysis || null;
+        referenceErrorMsg = data.referenceError || null;
+
+        if (data.referenceError) {
+          step1Status = 'warning';
+          validationNote = `Peringatan referensi visual: ${data.referenceError}`;
+        }
+
         if (data.source === 'gemini' && data.spec) {
           const { spec: validSpec } = validateSpec(data.spec);
           if (validSpec) {
             resolvedSpec = validSpec;
-            step1Status = 'success';
+            if (!data.referenceError) step1Status = 'success';
             const refNote = data.usedReference ? ' (Referensi Gambar Aktif)' : '';
-            validationNote = `Output AI Gemini tervalidasi 100%${refNote}`;
+            validationNote = validationNote || `Output AI Gemini tervalidasi 100%${refNote}`;
           }
         } else if (data.source === 'fallback' || !data.success) {
           step1Status = 'warning';
@@ -127,7 +140,30 @@ export async function executeSpriteGeneration(
           endpoint: '/api/generate',
           payload: {
             model: providerConfig.model || 'llama3',
-            prompt: `Sebagai Art Director, klasifikasikan prompt "${prompt}" menjadi JSON CharacterSpec (archetype, body, head, weapon, offhand, cape).`,
+            prompt: `Sebagai Art Director senior pixel art 2D retro RPG, tentukan JSON CharacterSpec lengkap untuk prompt "${prompt}". Balas HANYA JSON sesuai format berikut:
+{
+  "name": "Nama Karakter",
+  "archetype": "fighter" | "archer" | "mage" | "goblin" | "zombie" | "npc",
+  "body": "slim" | "normal" | "heavy",
+  "head": "bare" | "hood" | "helmet_open" | "helmet_closed" | "horned",
+  "weapon": "sword" | "axe" | "staff" | "bow" | "dagger" | "none",
+  "offhand": "shield" | "none",
+  "cape": "none" | "short" | "long",
+  "palette": {
+    "skin": "#RRGGBB",
+    "hair": "#RRGGBB",
+    "primary": "#RRGGBB",
+    "secondary": "#RRGGBB",
+    "accent": "#RRGGBB",
+    "metal": "#RRGGBB"
+  },
+  "animations": ["idle", "walk", "attack"],
+  "proportions": { "height": "normal", "headSize": "normal", "torsoWidth": 2, "legLength": "normal", "armThickness": 1 },
+  "variants": { "hair": 0, "head": 0, "torso": 0, "weapon": 0 },
+  "traits": ["none"],
+  "accessories": [],
+  "hairStyle": "short"
+}`,
             stream: false
           }
         })
@@ -175,7 +211,13 @@ export async function executeSpriteGeneration(
     durationMs: Date.now() - step1Start,
     status: step1Status,
     tokenCount: Math.round(prompt.length / 3) + 40,
-    details: { spec: resolvedSpec, direction: resolvedDirection, usedReference: !!request.referenceImage }
+    details: {
+      spec: resolvedSpec,
+      direction: resolvedDirection,
+      usedReference,
+      referenceAnalysis: referenceAnalysisData,
+      referenceError: referenceErrorMsg
+    }
   });
 
   // STEP 2: Color Ramp Shading & Palette Construction

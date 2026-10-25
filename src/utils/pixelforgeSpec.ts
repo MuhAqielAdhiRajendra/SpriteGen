@@ -223,11 +223,18 @@ export function applyReferenceAnalysisToSpec(
   }
   const finalTraits: CharacterTrait[] = traits.length > 0 ? (traits.slice(0, 2) as CharacterTrait[]) : ['none'];
 
-  // 6. Accessories
+  // 6. Cape & Accessories
+  let cape: CapeType = spec.cape;
+  if (!p.includes('jubah') && !p.includes('cape') && !p.includes('mantel')) {
+    if (analysis.accessories && Array.isArray(analysis.accessories) && (analysis.accessories as string[]).includes('cape')) {
+      cape = 'long';
+    }
+  }
+
   const accessories = [...(spec.accessories || [])];
   if (Array.isArray(analysis.accessories)) {
     for (const a of analysis.accessories) {
-      if (ACCESSORIES.includes(a as CharacterAccessory) && !accessories.includes(a as CharacterAccessory)) {
+      if ((a as string) !== 'cape' && ACCESSORIES.includes(a as CharacterAccessory) && !accessories.includes(a as CharacterAccessory)) {
         accessories.push(a as CharacterAccessory);
       }
     }
@@ -263,6 +270,7 @@ export function applyReferenceAnalysisToSpec(
     body,
     head,
     weapon,
+    cape,
     proportions,
     variants: spec.variants || DEFAULT_VARIANTS,
     traits: finalTraits,
@@ -359,7 +367,22 @@ export function resolveLayout(spec: CharacterSpec, size: number = 32): Character
 // JSON schema untuk structured output CharacterSpec (Gemini responseSchema)
 export const SPEC_JSON_SCHEMA = {
   type: 'object',
-  required: ['name', 'archetype', 'body', 'head', 'weapon', 'offhand', 'cape', 'palette', 'animations'],
+  required: [
+    'name',
+    'archetype',
+    'body',
+    'head',
+    'weapon',
+    'offhand',
+    'cape',
+    'palette',
+    'animations',
+    'proportions',
+    'variants',
+    'traits',
+    'accessories',
+    'hairStyle',
+  ],
   properties: {
     name: { type: 'string' },
     archetype: { type: 'string', enum: [...ARCHETYPES] },
@@ -383,6 +406,7 @@ export const SPEC_JSON_SCHEMA = {
     animations: { type: 'array', items: { type: 'string', enum: [...ANIMS] } },
     proportions: {
       type: 'object',
+      required: ['height', 'headSize', 'torsoWidth', 'legLength', 'armThickness'],
       properties: {
         height: { type: 'string', enum: [...HEIGHTS] },
         headSize: { type: 'string', enum: [...HEAD_SIZES] },
@@ -393,6 +417,7 @@ export const SPEC_JSON_SCHEMA = {
     },
     variants: {
       type: 'object',
+      required: ['hair', 'head', 'torso', 'weapon'],
       properties: {
         hair: { type: 'integer', minimum: 0, maximum: 4 },
         head: { type: 'integer', minimum: 0, maximum: 3 },
@@ -526,7 +551,7 @@ User: "goblin kerdil licik berkepala besar dengan telinga runcing membawa belati
 
 Contoh 3 (Penyihir Tall-Slim):
 User: "penyihir agung jangkung ramping bertudung mistis dan jubah panjang ungu berkilau"
-{"name":"Penyihir Agung","archetype":"mage","body":"slim","head":"hood","weapon":"staff","offhand":"none","cape":"long","proportions":{"height":"tall","headSize":"normal","torsoWidth":1,"legLength":"long","armThickness":1},"variants":{"hair":0,"head":2,"torso":3,"weapon":2},"traits":["none"],"accessories":["cape"],"hairStyle":"none","palette":{"skin":"#fed7aa","hair":"#e2e8f0","primary":"#7e22ce","secondary":"#3b0764","accent":"#38bdf8","metal":"#facc15"},"animations":["idle","walk","attack"]}
+{"name":"Penyihir Agung","archetype":"mage","body":"slim","head":"hood","weapon":"staff","offhand":"none","cape":"long","proportions":{"height":"tall","headSize":"normal","torsoWidth":1,"legLength":"long","armThickness":1},"variants":{"hair":0,"head":2,"torso":3,"weapon":2},"traits":["none"],"accessories":[],"hairStyle":"none","palette":{"skin":"#fed7aa","hair":"#e2e8f0","primary":"#7e22ce","secondary":"#3b0764","accent":"#38bdf8","metal":"#facc15"},"animations":["idle","walk","attack"]}
 
 Contoh 4 (Pemanah Slim dengan Quiver):
 User: "pemanah lincah elf dengan busur kayu dan tabung panah di punggung"
@@ -673,22 +698,32 @@ export const DEFAULT_SPEC: CharacterSpec = {
 // ============================================================
 export function countSilhouetteDifferences(a: CharacterSpec, b: CharacterSpec): number {
   let diff = 0;
+  if (a.archetype !== b.archetype) diff++;
   if (a.body !== b.body) diff++;
   if (a.head !== b.head) diff++;
   if (a.weapon !== b.weapon) diff++;
   if (a.offhand !== b.offhand) diff++;
   if (a.cape !== b.cape) diff++;
+  if (a.hairStyle !== b.hairStyle) diff++;
+
   if (a.proportions?.height !== b.proportions?.height) diff++;
   if (a.proportions?.headSize !== b.proportions?.headSize) diff++;
   if (a.proportions?.torsoWidth !== b.proportions?.torsoWidth) diff++;
   if (a.proportions?.legLength !== b.proportions?.legLength) diff++;
   if (a.proportions?.armThickness !== b.proportions?.armThickness) diff++;
 
+  if (a.variants?.hair !== b.variants?.hair) diff++;
+  if (a.variants?.head !== b.variants?.head) diff++;
+  if (a.variants?.torso !== b.variants?.torso) diff++;
+  if (a.variants?.weapon !== b.variants?.weapon) diff++;
+
   const traitsA = (a.traits || []).slice().sort().join(',');
   const traitsB = (b.traits || []).slice().sort().join(',');
   if (traitsA !== traitsB) diff++;
 
-  if (a.hairStyle !== b.hairStyle) diff++;
+  const accA = (a.accessories || []).slice().sort().join(',');
+  const accB = (b.accessories || []).slice().sort().join(',');
+  if (accA !== accB) diff++;
 
   return diff;
 }
@@ -707,10 +742,9 @@ export function validateReferenceImagePayload(referenceImage: any): { valid: boo
     return { valid: false, error: 'data gambar base64 tidak boleh kosong dan harus berupa string' };
   }
   const rawBase64 = referenceImage.data.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
-  const sizeBytes = Math.round((rawBase64.length * 3) / 4);
-  const maxBytes = 2 * 1024 * 1024; // 2MB
-  if (sizeBytes > maxBytes) {
-    return { valid: false, error: `Ukuran gambar melebihi batas 2MB (${Math.round(sizeBytes / 1024)} KB terkompresi)` };
+  const maxBase64Length = Math.round(2.8 * 1024 * 1024); // 2.8MB base64 size limit
+  if (rawBase64.length > maxBase64Length) {
+    return { valid: false, error: `Ukuran gambar base64 melebihi batas 2.8MB (${Math.round(rawBase64.length / 1024)} KB)` };
   }
   return { valid: true };
 }

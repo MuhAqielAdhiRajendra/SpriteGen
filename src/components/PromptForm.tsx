@@ -255,8 +255,9 @@ export const PromptForm: React.FC<PromptFormProps> = ({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isGenerating || isProcessingImg}
-                className="forge-btn-secondary px-2.5 py-1 text-xs font-pixel flex items-center gap-1.5"
+                disabled={isGenerating || isProcessingImg || activeProvider.type !== 'gemini'}
+                className="forge-btn-secondary px-2.5 py-1 text-xs font-pixel flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                title={activeProvider.type !== 'gemini' ? "Referensi gambar hanya didukung oleh Google Gemini" : "Unggah gambar referensi"}
               >
                 {isProcessingImg ? (
                   <Loader2 className="w-3 h-3 animate-spin text-[#fbbf24]" />
@@ -269,9 +270,9 @@ export const PromptForm: React.FC<PromptFormProps> = ({
               <button
                 type="button"
                 onClick={() => handleSelectPresetRef('/assets/aistudio/contoh_sprite_a9fa793f.jpg', 'contoh_sprite_hero.jpg')}
-                disabled={isGenerating || isProcessingImg}
-                className="px-2 py-1 text-[10px] font-tech bg-[#1c1917] hover:bg-[#383330] text-[#a8a29e] hover:text-[#e7e5e4] border border-[#44403c] transition-colors"
-                title="Gunakan karakter petualang rambut oranye sebagai acuan"
+                disabled={isGenerating || isProcessingImg || activeProvider.type !== 'gemini'}
+                className="px-2 py-1 text-[10px] font-tech bg-[#1c1917] hover:bg-[#383330] text-[#a8a29e] hover:text-[#e7e5e4] border border-[#44403c] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title={activeProvider.type !== 'gemini' ? "Referensi hanya untuk Gemini" : "Gunakan karakter petualang rambut oranye sebagai acuan"}
               >
                 Preset: Hero Oranye
               </button>
@@ -279,9 +280,9 @@ export const PromptForm: React.FC<PromptFormProps> = ({
               <button
                 type="button"
                 onClick={() => handleSelectPresetRef('/character_spritesheet_3x4.jpg', 'character_spritesheet_3x4.jpg')}
-                disabled={isGenerating || isProcessingImg}
-                className="px-2 py-1 text-[10px] font-tech bg-[#1c1917] hover:bg-[#383330] text-[#a8a29e] hover:text-[#e7e5e4] border border-[#44403c] transition-colors"
-                title="Gunakan lembar 3x4 sebagai acuan"
+                disabled={isGenerating || isProcessingImg || activeProvider.type !== 'gemini'}
+                className="px-2 py-1 text-[10px] font-tech bg-[#1c1917] hover:bg-[#383330] text-[#a8a29e] hover:text-[#e7e5e4] border border-[#44403c] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title={activeProvider.type !== 'gemini' ? "Referensi hanya untuk Gemini" : "Gunakan lembar 3x4 sebagai acuan"}
               >
                 Preset: Sheet 3×4
               </button>
