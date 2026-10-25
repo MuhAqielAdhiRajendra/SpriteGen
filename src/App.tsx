@@ -20,6 +20,7 @@ import { ExportPanel } from './components/ExportPanel';
 import { ProviderSettingsModal } from './components/ProviderSettingsModal';
 import { PresetGalleryModal } from './components/PresetGalleryModal';
 import { DocsModal } from './components/DocsModal';
+import { SpriteSheetModal } from './components/SpriteSheetModal';
 import { executeSpriteGeneration } from './utils/aiPipeline';
 import {
   applyAutoRefinement,
@@ -30,7 +31,7 @@ import {
   cloneGrid,
   PALETTES
 } from './utils/pixelEngine';
-import { Terminal, ShieldCheck, Download } from 'lucide-react';
+import { Flame, Film, Download, ShieldCheck, ScrollText, LayoutGrid, SlidersHorizontal } from 'lucide-react';
 
 const DEFAULT_PROVIDER: AIProviderConfig = {
   id: 'gemini-default',
@@ -68,12 +69,18 @@ export default function App() {
 
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isRefining, setIsRefining] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'logs' | 'evaluation' | 'export'>('logs');
+
+  // Workbench Tabs: 'forge' | 'monitor' | 'export'
+  const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<'forge' | 'monitor' | 'export'>('forge');
+
+  // Mobile View Toggle: 'canvas' | 'workbench'
+  const [mobileTab, setMobileTab] = useState<'canvas' | 'workbench'>('canvas');
 
   // Modals state
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isPresetsOpen, setIsPresetsOpen] = useState<boolean>(false);
   const [isDocsOpen, setIsDocsOpen] = useState<boolean>(false);
+  const [isSheetModalOpen, setIsSheetModalOpen] = useState<boolean>(false);
 
   // Initial Sample Character (Frame-by-frame Cel Architecture)
   const [currentSprite, setCurrentSprite] = useState<CharacterSprite>(() => {
@@ -118,8 +125,8 @@ export default function App() {
         {
           id: 'step-init-1',
           phase: 'parse',
-          title: 'Inisialisasi Studio PixelForge',
-          description: 'Sistem siap menerima prompt visual karakter baru',
+          title: 'Inisialisasi Bengkel Forge',
+          description: 'Sistem siap menerima pesanan karakter baru di tungku perapian.',
           timestamp: new Date().toLocaleTimeString('id-ID'),
           durationMs: 30,
           status: 'success'
@@ -127,7 +134,7 @@ export default function App() {
         {
           id: 'step-init-2',
           phase: 'review',
-          title: 'Frame Cel Siap (Frame-by-Frame Aseprite Engine)',
+          title: 'Frame Cel Siap Ditempa',
           description: `Kepatuhan prompt: ${initialEval.adherenceScore}%, Siluet Cel: ${initialEval.silhouetteScore}%`,
           timestamp: new Date().toLocaleTimeString('id-ID'),
           durationMs: 45,
@@ -176,7 +183,7 @@ export default function App() {
     if (isGenerating || !prompt.trim()) return;
     setIsGenerating(true);
     setIsPlaying(false);
-    setActiveTab('logs');
+    setActiveWorkbenchTab('forge');
     setLogs([]);
 
     try {
@@ -215,7 +222,7 @@ export default function App() {
       setHistoryList((prev) => [result, ...prev.slice(0, 15)]);
 
       setTimeout(() => {
-        setActiveTab('evaluation');
+        setActiveWorkbenchTab('monitor');
       }, 700);
     } catch (err: any) {
       console.error('Generation error:', err);
@@ -388,8 +395,8 @@ export default function App() {
       {
         id: `anim-${animType}-${Date.now()}`,
         phase: 'export',
-        title: `Animasi Cel ${animType.toUpperCase()} Dihasilkan`,
-        description: `AI berhasil menggambar ${newSeq.length} cel frame baru untuk aksi ${animType}.`,
+        title: `Animasi Cel ${animType.toUpperCase()} Ditempa`,
+        description: `Tukang besi berhasil menyusun ${newSeq.length} cel frame baru untuk gerakan ${animType}.`,
         timestamp: new Date().toLocaleTimeString('id-ID'),
         durationMs: 90,
         status: 'success'
@@ -420,7 +427,7 @@ export default function App() {
       );
       newEval.adherenceScore = Math.min(99, newEval.adherenceScore + 4);
       newEval.silhouetteScore = Math.min(98, newEval.silhouetteScore + 5);
-      newEval.verdict = 'Hasil perbaikan AI berhasil! Siluet cel kini lebih bersih dan specular kontur atas terdefinisi tajam tanpa bayangan kotor.';
+      newEval.verdict = 'Hasil tempaan berhasil dihaluskan! Siluet cel kini lebih bersih dan garis kontur terdefinisi tajam tanpa pixel liar.';
 
       handlePixelChange(refined);
       setCurrentSprite((prev) => ({
@@ -433,8 +440,8 @@ export default function App() {
         {
           id: `refine-manual-${Date.now()}`,
           phase: 'refine',
-          title: 'Manual AI Refinement Berhasil Diterapkan',
-          description: `Skor siluet meningkat ke ${newEval.silhouetteScore}%. Orphan pixel telah dibersihkan.`,
+          title: 'Penghalusan Besi Manual Diterapkan',
+          description: `Skor siluet meningkat ke ${newEval.silhouetteScore}%. Pixel liar berhasil dibersihkan.`,
           timestamp: new Date().toLocaleTimeString('id-ID'),
           durationMs: 120,
           status: 'success'
@@ -472,49 +479,122 @@ export default function App() {
     setLogs(savedSprite.pipelineLogs);
   };
 
+  // Load Reference Character to studio
+  const handleLoadCharacterToStudio = (characterData: { prompt: string; name: string }) => {
+    setPrompt(characterData.prompt);
+    setResolution(32);
+    setPaletteKey('vibrant_rpg');
+    setColorGrading('vibrant');
+    setDirection('front');
+    setRequestedAnimations(['idle', 'walk', 'attack']);
+
+    const pal = PALETTES.vibrant_rpg.colors;
+    const initialGen = generateProceduralCharacter({
+      prompt: characterData.prompt,
+      resolution: 32,
+      paletteKey: 'vibrant_rpg',
+      colorGrading: 'vibrant',
+      direction: 'front',
+      requestedAnimations: ['idle', 'walk', 'attack']
+    });
+
+    const initialEval = evaluateSpriteMatrix(
+      initialGen.pixels,
+      characterData.prompt,
+      32,
+      pal,
+      initialGen.features
+    );
+
+    const loadedSprite: CharacterSprite = {
+      id: `hero-${Date.now()}`,
+      name: characterData.name,
+      prompt: characterData.prompt,
+      resolution: 32,
+      paletteName: 'vibrant_rpg',
+      palette: pal,
+      colorGrading: 'vibrant',
+      direction: 'front',
+      isAnimated: true,
+      requestedAnimations: ['idle', 'walk', 'attack'],
+      fps: 8,
+      loop: true,
+      activeAnimationKey: 'idle',
+      animations: initialGen.animations,
+      frames: initialGen.frames,
+      currentFrameIndex: 0,
+      currentPixels: initialGen.frames[0].pixels,
+      aiEvaluation: initialEval,
+      pipelineLogs: [
+        {
+          id: 'step-load-1',
+          phase: 'export',
+          title: 'Karakter Referensi Dimuat ke Tungku',
+          description: 'Spiky Orange Hair Hero siap dianimasikan & diedit di canvas',
+          timestamp: new Date().toLocaleTimeString('id-ID'),
+          durationMs: 30,
+          status: 'success'
+        }
+      ],
+      providerUsed: activeProvider.name,
+      modelUsed: activeProvider.model,
+      createdAt: new Date().toISOString()
+    };
+
+    setCurrentSprite(loadedSprite);
+    setHistoryList((prev) => [loadedSprite, ...prev]);
+  };
+
   return (
-    <div className="min-h-screen bg-[#0b0f17] text-slate-100 flex flex-col">
-      {/* Top Navigation */}
+    <div className="min-h-screen bg-[#1c1917] text-[#e7e5e4] flex flex-col font-body selection:bg-[#ea580c] selection:text-[#1c1917]">
+      {/* Top Retro Anvil Navbar */}
       <Navbar
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenPresets={() => setIsPresetsOpen(true)}
         onOpenDocs={() => setIsDocsOpen(true)}
+        onOpenSheetModal={() => setIsSheetModalOpen(true)}
         onNewSprite={() => {
           setPrompt('');
-          setActiveTab('logs');
+          setActiveWorkbenchTab('forge');
         }}
         providerName={activeProvider.name}
       />
 
-      {/* Main Studio Viewport */}
-      <main className="flex-1 max-w-[1720px] w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Left Column: Generator Form (4 columns) */}
-        <div className="lg:col-span-4 xl:col-span-3">
-          <PromptForm
-            prompt={prompt}
-            setPrompt={setPrompt}
-            resolution={resolution}
-            setResolution={setResolution}
-            direction={direction}
-            setDirection={setDirection}
-            paletteKey={paletteKey}
-            setPaletteKey={setPaletteKey}
-            colorGrading={colorGrading}
-            setColorGrading={setColorGrading}
-            requestedAnimations={requestedAnimations}
-            setRequestedAnimations={setRequestedAnimations}
-            autoRefine={autoRefine}
-            setAutoRefine={setAutoRefine}
-            isGenerating={isGenerating}
-            onGenerate={handleGenerate}
-            activeProvider={activeProvider}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-          />
-        </div>
+      {/* Mobile Mode Switcher (Hidden on Desktop) */}
+      <div className="lg:hidden w-full bg-[#292524] border-b-2 border-[#44403c] p-2 flex items-center justify-center gap-2">
+        <button
+          onClick={() => setMobileTab('canvas')}
+          className={`flex-1 py-1.5 px-3 text-xs font-pixel uppercase tracking-wider border-2 border-[#000] flex items-center justify-center gap-2 transition-all ${
+            mobileTab === 'canvas'
+              ? 'bg-[#ea580c] text-[#1c1917] font-bold shadow-[2px_2px_0_#000]'
+              : 'bg-[#1c1917] text-[#a8a29e] hover:text-[#e7e5e4]'
+          }`}
+        >
+          <LayoutGrid className="w-3.5 h-3.5" />
+          <span>Kanvas & Cel</span>
+        </button>
+        <button
+          onClick={() => setMobileTab('workbench')}
+          className={`flex-1 py-1.5 px-3 text-xs font-pixel uppercase tracking-wider border-2 border-[#000] flex items-center justify-center gap-2 transition-all ${
+            mobileTab === 'workbench'
+              ? 'bg-[#ea580c] text-[#1c1917] font-bold shadow-[2px_2px_0_#000]'
+              : 'bg-[#1c1917] text-[#a8a29e] hover:text-[#e7e5e4]'
+          }`}
+        >
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          <span>Meja Tempa</span>
+        </button>
+      </div>
 
-        {/* Center Column: Interactive Pixel Canvas + Timeline Frame Editor (5 columns) */}
-        <div className="lg:col-span-5 xl:col-span-5 flex flex-col gap-3">
-          {/* Main Pixel Canvas */}
+      {/* Main Studio Viewport (Editor Layout) */}
+      <main className="flex-1 max-w-[1800px] w-full mx-auto p-2 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 items-start">
+        {/* Left & Center Main Studio Area: Canvas + Timeline (7 or 8 columns on Desktop) */}
+        <section
+          className={`lg:col-span-7 xl:col-span-8 flex flex-col gap-3 ${
+            mobileTab === 'canvas' ? 'flex' : 'hidden lg:flex'
+          }`}
+        >
+          {/* Main Pixel Canvas with Vertical Tool Rail */}
           <PixelCanvas
             pixels={currentSprite.currentPixels}
             resolution={currentSprite.resolution}
@@ -527,7 +607,7 @@ export default function App() {
             totalFrames={currentSprite.frames.length}
           />
 
-          {/* Timeline Bar (Underneath Canvas) */}
+          {/* Timeline Bar (Filmstrip Underneath Canvas) */}
           <TimelineBar
             frames={currentSprite.frames}
             currentFrameIndex={currentSprite.currentFrameIndex}
@@ -546,82 +626,127 @@ export default function App() {
             onToggleOnionSkin={() => setOnionSkin(!onionSkin)}
             resolution={currentSprite.resolution}
           />
+        </section>
 
-          {/* Small Real-time Flipbook Animation Preview */}
-          <AnimationPreview
-            animations={currentSprite.animations}
-            activeAnimationKey={currentSprite.activeAnimationKey}
-            onSelectAnimation={handleSelectAnimation}
-            resolution={currentSprite.resolution}
-            fps={currentSprite.fps}
-            onChangeFps={(newFps) => setCurrentSprite((s) => ({ ...s, fps: newFps }))}
-            loop={currentSprite.loop}
-            onToggleLoop={() => setCurrentSprite((s) => ({ ...s, loop: !s.loop }))}
-            onSynthesizeAnimation={handleSynthesizeAnimation}
-          />
-        </div>
-
-        {/* Right Column: Observability Dashboard & Evaluation (3 columns) */}
-        <div className="lg:col-span-3 xl:col-span-4 flex flex-col gap-4">
-          {/* Segmented Tab Bar */}
-          <div className="flex items-center gap-1 p-1 bg-[#121826] border border-slate-800 rounded-lg">
+        {/* Right Area: Workbench / Meja Tempa (5 or 4 columns on Desktop) */}
+        <aside
+          className={`lg:col-span-5 xl:col-span-4 flex flex-col gap-3 ${
+            mobileTab === 'workbench' ? 'flex' : 'hidden lg:flex'
+          }`}
+        >
+          {/* Chiseled Workbench Navigation Tabs */}
+          <div className="flex items-center gap-1.5 p-1 bg-[#292524] border-2 border-[#44403c] shadow-[2px_2px_0_#000]">
             <button
-              onClick={() => setActiveTab('logs')}
-              className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                activeTab === 'logs'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
+              onClick={() => setActiveWorkbenchTab('forge')}
+              className={`flex-1 py-1.5 px-2 text-xs font-pixel uppercase tracking-wide border-2 border-[#000] flex items-center justify-center gap-1.5 transition-all ${
+                activeWorkbenchTab === 'forge'
+                  ? 'bg-[#ea580c] text-[#1c1917] font-bold shadow-[2px_2px_0_#000]'
+                  : 'bg-[#1c1917] text-[#a8a29e] hover:text-[#e7e5e4] hover:bg-[#292524]'
               }`}
+              title="Tungku Penempaan & Parameter Karakter"
             >
-              <Terminal className="w-3.5 h-3.5" />
-              <span>Log Real-Time</span>
+              <Flame className="w-3.5 h-3.5" />
+              <span>1. Tempa</span>
             </button>
 
             <button
-              onClick={() => setActiveTab('evaluation')}
-              className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                activeTab === 'evaluation'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
+              onClick={() => setActiveWorkbenchTab('monitor')}
+              className={`flex-1 py-1.5 px-2 text-xs font-pixel uppercase tracking-wide border-2 border-[#000] flex items-center justify-center gap-1.5 transition-all ${
+                activeWorkbenchTab === 'monitor'
+                  ? 'bg-[#ea580c] text-[#1c1917] font-bold shadow-[2px_2px_0_#000]'
+                  : 'bg-[#1c1917] text-[#a8a29e] hover:text-[#e7e5e4] hover:bg-[#292524]'
               }`}
+              title="Monitor Animasi CRT & Inspeksi Kualitas"
             >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Evaluasi AI</span>
+              <Film className="w-3.5 h-3.5" />
+              <span>2. Monitor</span>
             </button>
 
             <button
-              onClick={() => setActiveTab('export')}
-              className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                activeTab === 'export'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
+              onClick={() => setActiveWorkbenchTab('export')}
+              className={`flex-1 py-1.5 px-2 text-xs font-pixel uppercase tracking-wide border-2 border-[#000] flex items-center justify-center gap-1.5 transition-all ${
+                activeWorkbenchTab === 'export'
+                  ? 'bg-[#ea580c] text-[#1c1917] font-bold shadow-[2px_2px_0_#000]'
+                  : 'bg-[#1c1917] text-[#a8a29e] hover:text-[#e7e5e4] hover:bg-[#292524]'
               }`}
+              title="Ekspor Berkas & Catatan Penempaan"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Ekspor</span>
+              <span>3. Ekspor</span>
             </button>
           </div>
 
-          {/* Active Tab Content */}
-          {activeTab === 'logs' && (
-            <ExecutionLogs logs={logs} isGenerating={isGenerating} />
+          {/* Workbench Tab 1: Tungku Penempaan (PromptForm) */}
+          {activeWorkbenchTab === 'forge' && (
+            <div className="flex flex-col gap-3">
+              <PromptForm
+                prompt={prompt}
+                setPrompt={setPrompt}
+                resolution={resolution}
+                setResolution={setResolution}
+                direction={direction}
+                setDirection={setDirection}
+                paletteKey={paletteKey}
+                setPaletteKey={setPaletteKey}
+                colorGrading={colorGrading}
+                setColorGrading={setColorGrading}
+                requestedAnimations={requestedAnimations}
+                setRequestedAnimations={setRequestedAnimations}
+                autoRefine={autoRefine}
+                setAutoRefine={setAutoRefine}
+                isGenerating={isGenerating}
+                onGenerate={handleGenerate}
+                activeProvider={activeProvider}
+                onOpenSettings={() => setIsSettingsOpen(true)}
+              />
+
+              {/* Quick info strip under form */}
+              <div className="p-2.5 bg-[#292524] border-2 border-[#44403c] text-[11px] font-tech text-[#a8a29e] flex items-center justify-between">
+                <span>STATUS BENGKEL: <strong className="text-[#fbbf24]">SIAP MENEMPA</strong></span>
+                <span>ENGINE: <span className="text-[#e7e5e4]">{activeProvider.model}</span></span>
+              </div>
+            </div>
           )}
 
-          {activeTab === 'evaluation' && (
-            <AiEvaluationCard
-              evaluation={currentSprite.aiEvaluation}
-              onApplyRefinement={handleApplyRefine}
-              isRefining={isRefining}
-            />
+          {/* Workbench Tab 2: Monitor Cel & Inspeksi Kualitas */}
+          {activeWorkbenchTab === 'monitor' && (
+            <div className="flex flex-col gap-3">
+              {/* Retro CRT Cel Flipbook Monitor */}
+              <AnimationPreview
+                animations={currentSprite.animations}
+                activeAnimationKey={currentSprite.activeAnimationKey}
+                onSelectAnimation={handleSelectAnimation}
+                resolution={currentSprite.resolution}
+                fps={currentSprite.fps}
+                onChangeFps={(newFps) => setCurrentSprite((s) => ({ ...s, fps: newFps }))}
+                loop={currentSprite.loop}
+                onToggleLoop={() => setCurrentSprite((s) => ({ ...s, loop: !s.loop }))}
+                onSynthesizeAnimation={handleSynthesizeAnimation}
+              />
+
+              {/* Buku Inspeksi Penempaan */}
+              <AiEvaluationCard
+                evaluation={currentSprite.aiEvaluation}
+                onApplyRefinement={handleApplyRefine}
+                isRefining={isRefining}
+              />
+            </div>
           )}
 
-          {activeTab === 'export' && (
-            <ExportPanel sprite={currentSprite} />
+          {/* Workbench Tab 3: Ekspor & Catatan Penempaan */}
+          {activeWorkbenchTab === 'export' && (
+            <div className="flex flex-col gap-3">
+              {/* Panel Ekspor Karakter */}
+              <ExportPanel sprite={currentSprite} />
+
+              {/* Buku Catatan Log Penempaan */}
+              <ExecutionLogs logs={logs} isGenerating={isGenerating} />
+            </div>
           )}
-        </div>
+        </aside>
       </main>
 
-      {/* Modals */}
+      {/* Modals with Forge Theme */}
       <ProviderSettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -640,6 +765,12 @@ export default function App() {
       <DocsModal
         isOpen={isDocsOpen}
         onClose={() => setIsDocsOpen(false)}
+      />
+
+      <SpriteSheetModal
+        isOpen={isSheetModalOpen}
+        onClose={() => setIsSheetModalOpen(false)}
+        onLoadCharacterToStudio={handleLoadCharacterToStudio}
       />
     </div>
   );

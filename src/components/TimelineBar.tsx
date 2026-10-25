@@ -11,7 +11,7 @@ import {
   Layers,
   Repeat,
   Sliders,
-  Sparkles
+  Film
 } from 'lucide-react';
 
 interface TimelineBarProps {
@@ -50,7 +50,7 @@ const FrameThumbnail: React.FC<{
     if (!ctx) return;
 
     const size = resolution;
-    const thumbSize = 48;
+    const thumbSize = 44;
     canvas.width = thumbSize;
     canvas.height = thumbSize;
 
@@ -73,22 +73,24 @@ const FrameThumbnail: React.FC<{
     <button
       type="button"
       onClick={onClick}
-      className={`relative group shrink-0 flex flex-col items-center gap-1 p-1 rounded-lg border transition-all cursor-pointer ${
+      className={`relative shrink-0 flex flex-col items-center p-1 border-2 transition-all select-none ${
         isActive
-          ? 'bg-indigo-950/60 border-indigo-500 shadow-md ring-2 ring-indigo-500/50'
-          : 'bg-[#0b0f17] border-slate-800 hover:border-slate-700 hover:bg-slate-900'
+          ? 'bg-[#1c1917] border-[#fbbf24] shadow-[3px_3px_0_#000] -translate-y-0.5'
+          : 'bg-[#141211] border-[#44403c] hover:border-[#a8a29e] hover:bg-[#1c1917]'
       }`}
-      title={`Pilih Frame ${index + 1} (${frame.name || 'Cel'})`}
+      title={`Frame #${index + 1}: ${frame.name || 'Cel'}`}
     >
-      <div className="w-12 h-12 rounded checkerboard-pattern overflow-hidden flex items-center justify-center border border-black/40">
+      <div className="w-11 h-11 checkerboard-pattern overflow-hidden flex items-center justify-center border border-[#000]">
         <canvas ref={canvasRef} className="w-full h-full object-contain pixelated" />
       </div>
       <span
-        className={`text-[10px] font-mono px-1 rounded ${
-          isActive ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 group-hover:text-slate-200'
+        className={`text-[9px] font-tech font-bold mt-1 px-1 border ${
+          isActive
+            ? 'bg-[#ea580c] text-[#1c1917] border-[#000]'
+            : 'bg-[#292524] text-[#a8a29e] border-[#44403c]'
         }`}
       >
-        #{index + 1}
+        CEL #{index + 1}
       </span>
     </button>
   );
@@ -112,183 +114,168 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
   onToggleOnionSkin,
   resolution
 }) => {
-  const canMoveLeft = currentFrameIndex > 0;
-  const canMoveRight = currentFrameIndex < frames.length - 1;
-  const canDelete = frames.length > 1;
-
-  const handleStepPrev = () => {
-    if (frames.length <= 1) return;
-    const prev = (currentFrameIndex - 1 + frames.length) % frames.length;
-    onSelectFrame(prev);
-  };
-
-  const handleStepNext = () => {
-    if (frames.length <= 1) return;
-    const next = (currentFrameIndex + 1) % frames.length;
-    onSelectFrame(next);
-  };
+  // Spacebar shortcut for Play/Pause
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+        e.preventDefault();
+        onTogglePlay();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onTogglePlay]);
 
   return (
-    <div className="flex flex-col gap-2 p-3 bg-[#0d131f] border border-slate-800 rounded-xl shadow-inner">
-      {/* Top Timeline Controls Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
-        {/* Playback Controls */}
-        <div className="flex items-center gap-1.5">
+    <div className="flex flex-col bg-[#292524] border-2 border-[#44403c] shadow-[4px_4px_0_#000] select-none">
+      {/* Timeline Controls Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 bg-[#1c1917] border-b-2 border-[#44403c]">
+        {/* Playback & Frame Scrubber */}
+        <div className="flex items-center gap-2">
+          {/* Play/Pause Button */}
           <button
-            type="button"
             onClick={onTogglePlay}
-            className={`p-1.5 rounded-md font-semibold text-xs flex items-center gap-1.5 transition-colors shadow ${
+            className={`px-3 py-1 text-xs font-pixel flex items-center gap-1.5 border-2 transition-all ${
               isPlaying
-                ? 'bg-amber-600 hover:bg-amber-500 text-white'
-                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                ? 'bg-[#fbbf24] text-[#1c1917] border-[#000] font-bold shadow-[2px_2px_0_#000]'
+                : 'bg-[#ea580c] text-[#1c1917] border-[#000] font-bold shadow-[3px_3px_0_#000]'
             }`}
-            title={isPlaying ? 'Jeda Animasi (Spasi)' : 'Putar Animasi Frame-by-Frame (Spasi)'}
+            title="Putar / Jeda Animasi (Shortcut: Space)"
           >
-            {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-            <span className="text-[11px]">{isPlaying ? 'Jeda' : 'Putar'}</span>
+            {isPlaying ? (
+              <>
+                <Pause className="w-3.5 h-3.5 fill-current" />
+                <span>JEDA</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>PUTAR</span>
+              </>
+            )}
           </button>
 
+          {/* Stepper buttons */}
+          <div className="flex items-center bg-[#141211] border border-[#44403c]">
+            <button
+              onClick={() => onSelectFrame((currentFrameIndex - 1 + frames.length) % frames.length)}
+              className="p-1 text-[#a8a29e] hover:text-[#e7e5e4] hover:bg-[#292524]"
+              title="Frame Sebelumnya"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-[11px] font-tech text-[#fbbf24] px-2 font-bold">
+              {currentFrameIndex + 1}/{frames.length}
+            </span>
+            <button
+              onClick={() => onSelectFrame((currentFrameIndex + 1) % frames.length)}
+              className="p-1 text-[#a8a29e] hover:text-[#e7e5e4] hover:bg-[#292524]"
+              title="Frame Berikutnya"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Onion Skinning Toggle */}
           <button
-            type="button"
-            onClick={handleStepPrev}
-            className="p-1.5 rounded-md bg-[#0b0f17] text-slate-400 hover:text-white border border-slate-800"
-            title="Langkah ke Frame Sebelumnya"
+            onClick={onToggleOnionSkin}
+            className={`px-2 py-1 text-xs font-pixel flex items-center gap-1 border transition-all ${
+              onionSkin
+                ? 'bg-[#ea580c] text-[#1c1917] border-[#000] font-bold shadow-[2px_2px_0_#000]'
+                : 'bg-[#141211] text-[#a8a29e] border-[#44403c] hover:text-[#e7e5e4]'
+            }`}
+            title="Toggle Bayangan Frame Sebelumnya (Ghost Cel)"
           >
-            <ChevronLeft className="w-3.5 h-3.5" />
+            <Layers className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">ONION SKIN</span>
           </button>
 
-          <span className="text-[11px] font-mono text-slate-300 px-1">
-            {currentFrameIndex + 1} / {frames.length}
-          </span>
-
+          {/* Loop Toggle */}
           <button
-            type="button"
-            onClick={handleStepNext}
-            className="p-1.5 rounded-md bg-[#0b0f17] text-slate-400 hover:text-white border border-slate-800"
-            title="Langkah ke Frame Berikutnya"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
             onClick={onToggleLoop}
-            className={`p-1.5 rounded-md border text-xs transition-colors ${
+            className={`px-2 py-1 text-xs font-pixel flex items-center gap-1 border transition-all ${
               loop
-                ? 'bg-indigo-950/60 border-indigo-500 text-indigo-300'
-                : 'bg-[#0b0f17] border-slate-800 text-slate-500'
+                ? 'bg-[#292524] text-[#fbbf24] border-[#fbbf24]'
+                : 'bg-[#141211] text-[#78716c] border-[#44403c]'
             }`}
-            title={loop ? 'Loop Berulang Aktif' : 'Loop Non-aktif'}
+            title="Toggle Putar Berulang (Loop)"
           >
             <Repeat className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">LOOP</span>
           </button>
         </div>
 
-        {/* FPS Slider & Onion Skin Toggle */}
-        <div className="flex items-center gap-3">
-          {/* Onion Skinning */}
+        {/* Speed / FPS & Cel Editing Actions */}
+        <div className="flex items-center gap-2">
+          {/* FPS Stepper */}
+          <div className="flex items-center gap-1 bg-[#141211] border border-[#44403c] px-2 py-1">
+            <span className="text-[10px] font-tech text-[#a8a29e]">KECEPATAN:</span>
+            <input
+              type="number"
+              min="1"
+              max="24"
+              value={fps}
+              onChange={(e) => onChangeFps(Math.max(1, Math.min(24, parseInt(e.target.value) || 8)))}
+              className="w-10 bg-[#292524] text-center font-tech text-xs text-[#fbbf24] border border-[#44403c] outline-none"
+            />
+            <span className="text-[10px] font-tech text-[#a8a29e]">FPS</span>
+          </div>
+
+          {/* Add Frame */}
           <button
-            type="button"
-            onClick={onToggleOnionSkin}
-            className={`px-2 py-1 rounded-md text-xs font-medium border flex items-center gap-1.5 transition-colors ${
-              onionSkin
-                ? 'bg-amber-950/40 border-amber-500/80 text-amber-300 font-semibold shadow-sm'
-                : 'bg-[#0b0f17] border-slate-800 text-slate-400 hover:text-slate-200'
-            }`}
-            title="Tampilkan frame sebelumnya secara transparan (ghosting) sebagai panduan menggambar cel"
+            onClick={onAddFrame}
+            className="forge-btn-secondary px-2.5 py-1 text-xs flex items-center gap-1 text-[#fbbf24]"
+            title="Tambah Cel Kosong Baru"
           >
-            <Layers className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-[11px]">Onion Skin</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Tambah Cel</span>
           </button>
 
-          {/* FPS Slider */}
-          <div className="flex items-center gap-1.5 bg-[#0b0f17] px-2 py-1 rounded-md border border-slate-800">
-            <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap">
-              {fps} FPS
-            </span>
-            <input
-              type="range"
-              min={4}
-              max={24}
-              value={fps}
-              onChange={(e) => onChangeFps(Number(e.target.value))}
-              className="w-16 sm:w-20 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-              title={`Kecepatan: ${fps} Frame per detik`}
-            />
-          </div>
+          {/* Duplicate Frame */}
+          <button
+            onClick={onDuplicateFrame}
+            className="forge-btn-secondary px-2.5 py-1 text-xs flex items-center gap-1 text-[#e7e5e4]"
+            title="Duplikat Cel Terpilih ke Frame Baru"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Salin</span>
+          </button>
+
+          {/* Delete Frame */}
+          <button
+            onClick={() => onDeleteFrame(currentFrameIndex)}
+            disabled={frames.length <= 1}
+            className="forge-btn-danger px-2.5 py-1 text-xs flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Hapus Cel Ini"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Hapus</span>
+          </button>
         </div>
       </div>
 
-      {/* Frame Strip & Frame Operations */}
-      <div className="flex items-center justify-between gap-3 pt-1">
-        {/* Frame Action Buttons */}
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={onDuplicateFrame}
-            className="px-2 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1 transition-colors shadow"
-            title="Duplikat frame saat ini (menyalin semua pixel ke frame baru untuk diubah sedikit)"
-          >
-            <Copy className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Duplikat Frame</span>
-            <span className="sm:hidden">Duplikat</span>
-          </button>
+      {/* Frame Filmstrip Reel Container */}
+      <div className="p-3 overflow-x-auto bg-[#141211] flex items-center gap-2.5 min-h-[80px]">
+        {frames.map((frame, idx) => (
+          <FrameThumbnail
+            key={frame.id}
+            frame={frame}
+            resolution={resolution}
+            isActive={idx === currentFrameIndex}
+            index={idx}
+            onClick={() => onSelectFrame(idx)}
+          />
+        ))}
 
-          <button
-            type="button"
-            onClick={onAddFrame}
-            className="px-2 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium flex items-center gap-1 transition-colors border border-slate-700/60"
-            title="Tambah Frame Kosong Baru (Transparent)"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Frame Kosong</span>
-            <span className="sm:hidden">+ Baru</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onMoveFrame(currentFrameIndex, currentFrameIndex - 1)}
-            disabled={!canMoveLeft}
-            className="p-1.5 rounded-md bg-[#0b0f17] text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed border border-slate-800"
-            title="Pindah Frame ke Kiri (Sebelumnya)"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onMoveFrame(currentFrameIndex, currentFrameIndex + 1)}
-            disabled={!canMoveRight}
-            className="p-1.5 rounded-md bg-[#0b0f17] text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed border border-slate-800"
-            title="Pindah Frame ke Kanan (Setelahnya)"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onDeleteFrame(currentFrameIndex)}
-            disabled={!canDelete}
-            className="p-1.5 rounded-md bg-[#0b0f17] text-slate-400 hover:text-rose-400 disabled:opacity-30 disabled:cursor-not-allowed border border-slate-800"
-            title="Hapus Frame Saat Ini"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Scrollable Frame Thumbnails Strip */}
-        <div className="flex-1 flex items-center gap-2 overflow-x-auto py-1 px-1 max-w-[calc(100vw-80px)] sm:max-w-none">
-          {frames.map((frame, idx) => (
-            <FrameThumbnail
-              key={frame.id}
-              frame={frame}
-              resolution={resolution}
-              index={idx}
-              isActive={idx === currentFrameIndex}
-              onClick={() => onSelectFrame(idx)}
-            />
-          ))}
-        </div>
+        {/* Quick Add Cel Placeholder Button */}
+        <button
+          onClick={onAddFrame}
+          className="w-11 h-14 border-2 border-dashed border-[#44403c] bg-[#1c1917]/50 hover:bg-[#292524] hover:border-[#fbbf24] text-[#a8a29e] hover:text-[#fbbf24] flex flex-col items-center justify-center gap-1 shrink-0 transition-colors"
+          title="Tambah Cel Baru"
+        >
+          <Plus className="w-4 h-4" />
+          <span className="text-[8px] font-tech">+CEL</span>
+        </button>
       </div>
     </div>
   );

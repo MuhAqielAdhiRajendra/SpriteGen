@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   ZoomIn,
   ZoomOut,
-  Grid,
+  Grid as GridIcon,
   RotateCcw,
   RotateCw,
   Trash2,
@@ -10,7 +10,8 @@ import {
   Eraser,
   Pipette,
   PaintBucket,
-  Layers
+  Maximize2,
+  Sliders
 } from 'lucide-react';
 
 interface PixelCanvasProps {
@@ -39,10 +40,10 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
   totalFrames = 1
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [zoom, setZoom] = useState<number>(() => (resolution === 32 ? 10 : resolution === 64 ? 5 : 2.5));
+  const [zoom, setZoom] = useState<number>(() => (resolution === 32 ? 10 : resolution === 64 ? 6 : 3));
   const [showGrid, setShowGrid] = useState<boolean>(true);
   const [activeTool, setActiveTool] = useState<ToolMode>('pen');
-  const [currentColor, setCurrentColor] = useState<string>(palette[0] || '#ffffff');
+  const [currentColor, setCurrentColor] = useState<string>(palette[0] || '#e7e5e4');
   const [isMouseDown, setIsMouseDown] = useState<boolean>(false);
   const [hoverCoords, setHoverCoords] = useState<{ x: number; y: number } | null>(null);
 
@@ -50,17 +51,50 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
   const [history, setHistory] = useState<string[][][]>([]);
   const [redoStack, setRedoStack] = useState<string[][][]>([]);
 
-  // Keep currentColor in sync if palette changes
+  // Keep currentColor valid
   useEffect(() => {
     if (palette.length && !palette.includes(currentColor)) {
-      setCurrentColor(palette[Math.min(2, palette.length - 1)]);
+      setCurrentColor(palette[Math.min(1, palette.length - 1)] || '#e7e5e4');
     }
   }, [palette]);
 
   // Adjust default zoom when resolution changes
   useEffect(() => {
-    setZoom(resolution === 32 ? 10 : resolution === 64 ? 5 : 2.5);
+    setZoom(resolution === 32 ? 10 : resolution === 64 ? 6 : 3);
   }, [resolution]);
+
+  // Keyboard shortcuts (B = Pensil, E = Hapus, G = Ember, I = Pipet, Ctrl+Z = Undo)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in input or textarea
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+        return;
+      }
+
+      if (e.key === 'b' || e.key === 'B') {
+        setActiveTool('pen');
+      } else if (e.key === 'e' || e.key === 'E') {
+        setActiveTool('eraser');
+      } else if (e.key === 'g' || e.key === 'G') {
+        setActiveTool('bucket');
+      } else if (e.key === 'i' || e.key === 'I') {
+        setActiveTool('dropper');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [history, redoStack, pixels]);
 
   // Push to history before modification
   const pushHistory = useCallback((currentGrid: string[][]) => {
@@ -105,7 +139,6 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
         for (let x = 0; x < size; x++) {
           const prevColor = previousFramePixels[y]?.[x] || 'transparent';
           const currColor = pixels[y]?.[x] || 'transparent';
-          // Draw previous frame pixel if current frame has nothing here
           if (prevColor !== 'transparent' && currColor === 'transparent') {
             ctx.fillStyle = prevColor;
             ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
@@ -115,7 +148,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
       ctx.globalAlpha = 1.0;
     }
 
-    // 2. Draw Current Frame Pixels (100% opacity)
+    // 2. Draw Current Frame Pixels
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         const color = pixels[y]?.[x] || 'transparent';
@@ -126,9 +159,9 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
       }
     }
 
-    // 3. Draw Grid Lines
+    // 3. Draw Grid Lines (chiseled dark seams)
     if (showGrid && zoom >= 4) {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.strokeStyle = 'rgba(68, 64, 60, 0.45)';
       ctx.lineWidth = 1;
       for (let i = 0; i <= size; i++) {
         ctx.beginPath();
@@ -145,7 +178,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
 
     // 4. Draw Hover Cursor Indicator
     if (hoverCoords) {
-      ctx.strokeStyle = activeTool === 'eraser' ? 'rgba(244, 63, 94, 0.8)' : 'rgba(255, 255, 255, 0.7)';
+      ctx.strokeStyle = activeTool === 'eraser' ? '#b91c1c' : '#fbbf24';
       ctx.lineWidth = 1.5;
       ctx.strokeRect(hoverCoords.x * zoom, hoverCoords.y * zoom, zoom, zoom);
     }
@@ -234,124 +267,193 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
   };
 
   const handleClearCanvas = () => {
-    if (confirm('Bersihkan frame ini? Tindakan ini dapat dibatalkan dengan tombol Undo.')) {
+    if (confirm('Bersihkan landasan frame ini? Besi yang dihapus dapat dikembalikan dengan Undo.')) {
       pushHistory(pixels);
       const empty = Array(resolution).fill(null).map(() => Array(resolution).fill('transparent'));
       onChangePixels(empty);
     }
   };
 
+  const cursorClass =
+    activeTool === 'pen'
+      ? 'canvas-pixel-pencil'
+      : activeTool === 'eraser'
+      ? 'canvas-pixel-eraser'
+      : activeTool === 'bucket'
+      ? 'canvas-pixel-bucket'
+      : 'crosshair';
+
   return (
-    <div className="flex flex-col gap-3 p-4 bg-[#121826] border border-slate-800 rounded-xl shadow-lg">
-      {/* Top Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
-        {/* Tool Selector */}
-        <div className="flex items-center gap-1 p-1 bg-[#0b0f17] rounded-lg border border-slate-800">
-          <button
-            onClick={() => setActiveTool('pen')}
-            className={`p-1.5 rounded-md transition-colors ${
-              activeTool === 'pen' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-            }`}
-            title="Pena (Pencil Pixel)"
-          >
-            <Paintbrush className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setActiveTool('eraser')}
-            className={`p-1.5 rounded-md transition-colors ${
-              activeTool === 'eraser' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-            }`}
-            title="Penghapus (Eraser)"
-          >
-            <Eraser className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setActiveTool('bucket')}
-            className={`p-1.5 rounded-md transition-colors ${
-              activeTool === 'bucket' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-            }`}
-            title="Ember Cat (Flood Fill)"
-          >
-            <PaintBucket className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setActiveTool('dropper')}
-            className={`p-1.5 rounded-md transition-colors ${
-              activeTool === 'dropper' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-            }`}
-            title="Pipet Warna (Eyedropper)"
-          >
-            <Pipette className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* History & Clear */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={handleUndo}
-            disabled={history.length === 0}
-            className="p-1.5 rounded-md bg-[#0b0f17] text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed border border-slate-800"
-            title="Undo"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleRedo}
-            disabled={redoStack.length === 0}
-            className="p-1.5 rounded-md bg-[#0b0f17] text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed border border-slate-800"
-            title="Redo"
-          >
-            <RotateCw className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleClearCanvas}
-            className="p-1.5 rounded-md bg-[#0b0f17] text-slate-400 hover:text-rose-400 border border-slate-800 transition-colors"
-            title="Bersihkan Frame Ini"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Zoom & Grid */}
+    <div className="flex flex-col bg-[#292524] border-2 border-[#44403c] shadow-[4px_4px_0_#000] select-none">
+      {/* Editor Header Bar */}
+      <div className="flex items-center justify-between px-3 py-2 bg-[#1c1917] border-b-2 border-[#44403c]">
+        {/* Frame Status */}
         <div className="flex items-center gap-2">
+          <span className="font-pixel text-xs text-[#fbbf24] uppercase tracking-wide">
+            LANDASAN TEMPA:
+          </span>
+          <span className="text-xs font-tech font-bold text-[#e7e5e4] px-1.5 py-0.5 bg-[#292524] border border-[#44403c]">
+            {characterName || 'Karakter'}
+          </span>
+          <span className="text-xs font-tech text-[#a8a29e]">
+            [CEL {frameIndex + 1}/{totalFrames}]
+          </span>
+        </div>
+
+        {/* Zoom & Grid Controls */}
+        <div className="flex items-center gap-2">
+          {/* Grid Toggle */}
           <button
             onClick={() => setShowGrid(!showGrid)}
-            className={`p-1.5 rounded-md border transition-colors ${
-              showGrid ? 'bg-indigo-950/40 border-indigo-500 text-indigo-300' : 'bg-[#0b0f17] border-slate-800 text-slate-400'
+            className={`p-1.5 border text-xs font-pixel flex items-center gap-1 transition-all ${
+              showGrid
+                ? 'bg-[#ea580c] text-[#1c1917] border-[#000] shadow-[2px_2px_0_#000]'
+                : 'bg-[#292524] text-[#a8a29e] border-[#44403c] hover:text-[#e7e5e4]'
             }`}
-            title="Toggle Garis Grid"
+            title="Toggle Garis Grid Pixel"
           >
-            <Grid className="w-4 h-4" />
+            <GridIcon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">GRID</span>
           </button>
 
-          <div className="flex items-center gap-1 bg-[#0b0f17] border border-slate-800 rounded-lg p-0.5">
+          {/* Zoom In/Out */}
+          <div className="flex items-center bg-[#141211] border border-[#44403c] p-0.5">
             <button
               onClick={() => setZoom((z) => Math.max(1, z - 1))}
-              className="p-1 text-slate-400 hover:text-white"
+              className="p-1 text-[#a8a29e] hover:text-[#e7e5e4]"
               title="Perkecil Zoom"
             >
-              <ZoomOut className="w-3.5 h-3.5" />
+              <ZoomOut className="w-3 h-3" />
             </button>
-            <span className="text-[11px] font-mono px-1.5 text-slate-300 tabular-nums">
-              {zoom}×
+            <span className="text-[11px] font-tech text-[#fbbf24] px-1.5 min-w-[32px] text-center">
+              {zoom}x
             </span>
             <button
-              onClick={() => setZoom((z) => Math.min(20, z + 1))}
-              className="p-1 text-slate-400 hover:text-white"
+              onClick={() => setZoom((z) => Math.min(24, z + 1))}
+              className="p-1 text-[#a8a29e] hover:text-[#e7e5e4]"
               title="Perbesar Zoom"
             >
-              <ZoomIn className="w-3.5 h-3.5" />
+              <ZoomIn className="w-3 h-3" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main Viewport Container */}
-      <div className="relative flex items-center justify-center p-6 bg-[#0b0f17] rounded-xl border border-slate-800/80 overflow-auto min-h-[360px] max-h-[480px]">
-        {/* Canvas Frame with Checkerboard */}
-        <div className="relative checkerboard-pattern rounded shadow-2xl border border-slate-700/50 p-0 inline-block overflow-hidden">
+      {/* Editor Body: Left Tool Rail + Center Viewport */}
+      <div className="flex flex-row items-stretch min-h-[380px] sm:min-h-[440px] max-h-[580px] relative">
+        {/* Left Vertical Tool Rail */}
+        <div className="w-12 bg-[#1c1917] border-r-2 border-[#44403c] p-1.5 flex flex-col justify-between shrink-0">
+          {/* Drawing Tools */}
+          <div className="flex flex-col gap-1.5">
+            {/* Pen Tool */}
+            <button
+              onClick={() => setActiveTool('pen')}
+              className={`w-9 h-9 flex items-center justify-center border-2 transition-all relative group ${
+                activeTool === 'pen'
+                  ? 'bg-[#ea580c] border-[#000] text-[#1c1917] shadow-[2px_2px_0_#000]'
+                  : 'bg-[#292524] border-[#44403c] text-[#a8a29e] hover:text-[#e7e5e4] hover:bg-[#44403c]'
+              }`}
+              title="Pena Pixel (Shortcut: B)"
+            >
+              <Paintbrush className="w-4 h-4" />
+              <span className="absolute left-10 ml-2 hidden group-hover:block forge-tooltip z-50 whitespace-nowrap">
+                PENA [B]
+              </span>
+            </button>
+
+            {/* Eraser Tool */}
+            <button
+              onClick={() => setActiveTool('eraser')}
+              className={`w-9 h-9 flex items-center justify-center border-2 transition-all relative group ${
+                activeTool === 'eraser'
+                  ? 'bg-[#ea580c] border-[#000] text-[#1c1917] shadow-[2px_2px_0_#000]'
+                  : 'bg-[#292524] border-[#44403c] text-[#a8a29e] hover:text-[#e7e5e4] hover:bg-[#44403c]'
+              }`}
+              title="Penghapus Pixel (Shortcut: E)"
+            >
+              <Eraser className="w-4 h-4" />
+              <span className="absolute left-10 ml-2 hidden group-hover:block forge-tooltip z-50 whitespace-nowrap">
+                HAPUS [E]
+              </span>
+            </button>
+
+            {/* Bucket Tool */}
+            <button
+              onClick={() => setActiveTool('bucket')}
+              className={`w-9 h-9 flex items-center justify-center border-2 transition-all relative group ${
+                activeTool === 'bucket'
+                  ? 'bg-[#ea580c] border-[#000] text-[#1c1917] shadow-[2px_2px_0_#000]'
+                  : 'bg-[#292524] border-[#44403c] text-[#a8a29e] hover:text-[#e7e5e4] hover:bg-[#44403c]'
+              }`}
+              title="Ember Cat / Flood Fill (Shortcut: G)"
+            >
+              <PaintBucket className="w-4 h-4" />
+              <span className="absolute left-10 ml-2 hidden group-hover:block forge-tooltip z-50 whitespace-nowrap">
+                EMBER [G]
+              </span>
+            </button>
+
+            {/* Eyedropper Tool */}
+            <button
+              onClick={() => setActiveTool('dropper')}
+              className={`w-9 h-9 flex items-center justify-center border-2 transition-all relative group ${
+                activeTool === 'dropper'
+                  ? 'bg-[#ea580c] border-[#000] text-[#1c1917] shadow-[2px_2px_0_#000]'
+                  : 'bg-[#292524] border-[#44403c] text-[#a8a29e] hover:text-[#e7e5e4] hover:bg-[#44403c]'
+              }`}
+              title="Pipet Pengambil Warna (Shortcut: I)"
+            >
+              <Pipette className="w-4 h-4" />
+              <span className="absolute left-10 ml-2 hidden group-hover:block forge-tooltip z-50 whitespace-nowrap">
+                PIPET [I]
+              </span>
+            </button>
+
+            <div className="w-full h-0.5 bg-[#44403c] my-1" />
+
+            {/* Current Active Color Swatch */}
+            <div className="w-9 h-9 border-2 border-[#000] shadow-[2px_2px_0_#000] p-0.5 bg-[#141211] flex items-center justify-center">
+              <div
+                className="w-full h-full border border-[#000]"
+                style={{ backgroundColor: currentColor }}
+                title={`Warna Aktif: ${currentColor}`}
+              />
+            </div>
+          </div>
+
+          {/* History Tools */}
+          <div className="flex flex-col gap-1.5 pt-2 border-t-2 border-[#44403c]">
+            <button
+              onClick={handleUndo}
+              disabled={history.length === 0}
+              className="w-9 h-7 flex items-center justify-center bg-[#292524] border border-[#44403c] text-[#a8a29e] hover:text-[#e7e5e4] disabled:opacity-30 disabled:cursor-not-allowed text-xs"
+              title="Undo [Ctrl+Z]"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={redoStack.length === 0}
+              className="w-9 h-7 flex items-center justify-center bg-[#292524] border border-[#44403c] text-[#a8a29e] hover:text-[#e7e5e4] disabled:opacity-30 disabled:cursor-not-allowed text-xs"
+              title="Redo [Ctrl+Shift+Z]"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={handleClearCanvas}
+              className="w-9 h-7 flex items-center justify-center bg-[#292524] border border-[#44403c] text-[#b91c1c] hover:bg-[#b91c1c] hover:text-white transition-colors"
+              title="Bersihkan Landasan"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Center Viewport Stage */}
+        <div className="flex-1 bg-[#141211] p-4 flex items-center justify-center overflow-auto checkerboard-pattern relative">
           <canvas
             ref={canvasRef}
+            className={`pixelated shadow-[8px_8px_0_rgba(0,0,0,0.8)] border-2 border-[#44403c] ${cursorClass}`}
             onMouseDown={(e) => {
               setIsMouseDown(true);
               handlePixelAction(e.clientX, e.clientY, true);
@@ -362,69 +464,50 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
               setHoverCoords(null);
             }}
             onMouseMove={handleMouseMove}
-            className="cursor-crosshair block pixelated"
           />
-        </div>
-
-        {/* Bottom Left Coordinate & Frame Indicator */}
-        <div className="absolute bottom-3 left-3 flex items-center gap-2">
-          <div className="px-2 py-1 bg-black/70 backdrop-blur-sm rounded text-[11px] font-mono text-slate-300 border border-slate-800/80">
-            {hoverCoords ? `X: ${hoverCoords.x} · Y: ${hoverCoords.y}` : `${resolution} × ${resolution} px`}
-          </div>
-          <div className="px-2 py-1 bg-indigo-950/80 backdrop-blur-sm rounded text-[11px] font-mono text-indigo-300 border border-indigo-800/60 font-semibold">
-            Frame #{frameIndex + 1} of {totalFrames}
-          </div>
-          {onionSkin && (
-            <div className="px-2 py-1 bg-amber-950/80 backdrop-blur-sm rounded text-[10px] font-medium text-amber-300 border border-amber-800/60 flex items-center gap-1">
-              <Layers className="w-3 h-3 text-amber-400" />
-              <span>Onion Skin Aktif</span>
-            </div>
-          )}
-        </div>
-
-        {/* Top Right Character Name Badge */}
-        <div className="absolute top-3 right-3 px-2.5 py-1 bg-slate-900/80 backdrop-blur-sm rounded text-xs font-medium text-slate-300 border border-slate-800">
-          {characterName}
         </div>
       </div>
 
-      {/* Palette Swatches Bar */}
-      <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-800/80">
-        <div className="flex items-center justify-between text-xs text-slate-400">
-          <span>Palet Warna Aktif:</span>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-mono text-slate-300">{currentColor}</span>
-            <span
-              className="w-4 h-4 rounded-sm border border-white/20 shadow-inner"
-              style={{ backgroundColor: currentColor }}
-            />
-          </div>
+      {/* Editor Footer Status Bar */}
+      <div className="flex items-center justify-between px-3 py-1.5 bg-[#1c1917] border-t-2 border-[#44403c] text-[11px] font-tech text-[#a8a29e]">
+        {/* Cursor Coordinates */}
+        <div className="flex items-center gap-3">
+          <span>
+            POS:{' '}
+            <strong className="text-[#e7e5e4]">
+              {hoverCoords ? `X:${hoverCoords.x} Y:${hoverCoords.y}` : '-- : --'}
+            </strong>
+          </span>
+          <span className="hidden sm:inline">|</span>
+          <span className="hidden sm:inline">
+            UKURAN:{' '}
+            <strong className="text-[#fbbf24]">{resolution}x{resolution} PX</strong>
+          </span>
+          {onionSkin && (
+            <span className="text-[#ea580c] font-bold">
+              [ONION SKIN AKTIF]
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {palette.map((color, idx) => (
+        {/* Quick Palette Swatch Strip */}
+        <div className="flex items-center gap-1 overflow-x-auto max-w-[200px] sm:max-w-[340px] py-0.5">
+          {palette.slice(0, 16).map((col, idx) => (
             <button
-              key={idx}
+              key={`${col}-${idx}`}
               onClick={() => {
-                setCurrentColor(color);
-                if (activeTool === 'eraser') setActiveTool('pen');
+                setCurrentColor(col);
+                setActiveTool('pen');
               }}
-              className={`w-7 h-7 rounded-md border transition-all cursor-pointer ${
-                currentColor === color
-                  ? 'border-white scale-110 shadow-md ring-2 ring-indigo-500/50'
-                  : 'border-black/50 hover:scale-105'
+              style={{ backgroundColor: col }}
+              className={`w-4 h-4 border shrink-0 transition-transform ${
+                currentColor === col
+                  ? 'border-[#fbbf24] scale-110 shadow-[1px_1px_0_#000]'
+                  : 'border-[#000] hover:scale-105'
               }`}
-              style={{ backgroundColor: color }}
-              title={color}
+              title={`Pilih ${col}`}
             />
           ))}
-          <input
-            type="color"
-            value={currentColor.startsWith('#') ? currentColor : '#ffffff'}
-            onChange={(e) => setCurrentColor(e.target.value)}
-            className="w-7 h-7 rounded-md cursor-pointer bg-transparent border-0"
-            title="Custom Color Picker"
-          />
         </div>
       </div>
     </div>

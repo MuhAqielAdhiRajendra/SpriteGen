@@ -1,6 +1,6 @@
 import React from 'react';
 import { SpriteEvaluation } from '../types/sprite';
-import { ShieldCheck, Sparkles, Check, AlertCircle, Wrench } from 'lucide-react';
+import { ShieldCheck, Hammer, Check, AlertCircle } from 'lucide-react';
 
 interface AiEvaluationCardProps {
   evaluation: SpriteEvaluation | null;
@@ -15,156 +15,128 @@ export const AiEvaluationCard: React.FC<AiEvaluationCardProps> = ({
 }) => {
   if (!evaluation) {
     return (
-      <div className="p-8 text-center bg-[#0b0f17] border border-slate-800/80 rounded-xl text-slate-500 text-xs">
-        Evaluasi visual AI akan otomatis dijalankan setelah karakter dibuat.
+      <div className="p-8 text-center bg-[#141211] border-2 border-[#44403c] text-[#a8a29e] text-xs flex flex-col items-center gap-3">
+        {/* Pixel Mascot Resting */}
+        <div className="w-8 h-8 flex items-center justify-center">
+          <svg className="w-8 h-8" viewBox="0 0 16 16" shapeRendering="crispEdges">
+            <rect x="2" y="12" width="12" height="3" fill="#292524" />
+            <rect x="4" y="10" width="8" height="2" fill="#44403c" />
+            <rect x="7" y="6" width="4" height="4" fill="#a8a29e" />
+            <rect x="5" y="8" width="2" height="4" fill="#ea580c" />
+          </svg>
+        </div>
+        <div className="font-pixel text-sm text-[#e7e5e4]">Landasan masih kosong.</div>
+        <p className="text-[11px] font-body text-[#78716c]">
+          Tempa karakter untuk melihat catatan inspeksi kualitas bilah & proporsi.
+        </p>
       </div>
     );
   }
 
-  const isExceptional = evaluation.overallQuality === 'exceptional';
-  const isApproved = evaluation.overallQuality === 'approved';
+  const isApproved = evaluation.overallQuality === 'exceptional' || evaluation.overallQuality === 'approved';
 
   return (
-    <div className="flex flex-col gap-4 p-4 bg-[#121826] border border-slate-800 rounded-xl shadow-lg">
-      {/* Header Verdict Banner */}
+    <div className="flex flex-col gap-3 p-4 bg-[#292524] border-2 border-[#44403c] shadow-[4px_4px_0_#000]">
+      {/* Header Verdict */}
       <div
-        className={`p-3 rounded-lg border flex items-center justify-between gap-3 ${
-          isExceptional
-            ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
-            : isApproved
-            ? 'bg-indigo-950/30 border-indigo-500/40 text-indigo-200'
-            : 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+        className={`p-3 border-2 flex items-start justify-between gap-3 ${
+          isApproved
+            ? 'bg-[#1c1917] border-[#fbbf24] text-[#e7e5e4]'
+            : 'bg-[#1c1917] border-[#b91c1c] text-[#e7e5e4]'
         }`}
       >
-        <div className="flex items-center gap-2.5">
-          <ShieldCheck className="w-5 h-5 shrink-0" />
+        <div className="flex items-start gap-2.5">
+          <ShieldCheck
+            className={`w-5 h-5 shrink-0 mt-0.5 ${
+              isApproved ? 'text-[#fbbf24]' : 'text-[#b91c1c]'
+            }`}
+          />
           <div>
-            <div className="text-xs font-bold uppercase tracking-wider">
-              {isExceptional ? 'Kualitas Istimewa (AI Verified)' : isApproved ? 'Hasil Sesuai Prompt (AI Approved)' : 'Perlu Perbaikan Kontras'}
+            <div className="font-pixel text-xs font-bold uppercase tracking-wider text-[#fbbf24]">
+              {isApproved ? 'Lolos Uji Kualitas Tempa' : 'Perlu Penajaman Kontras'}
             </div>
-            <p className="text-[11px] opacity-80 mt-0.5">
+            <p className="text-xs font-body text-[#a8a29e] mt-0.5 leading-relaxed">
               {evaluation.verdict}
             </p>
           </div>
         </div>
 
-        <span className="text-[10px] font-mono opacity-70 whitespace-nowrap">
+        <span className="text-[10px] font-tech text-[#a8a29e] shrink-0">
           {evaluation.inspectedAt}
         </span>
       </div>
 
       {/* 3 Metrics Gauge Grid */}
       <div className="grid grid-cols-3 gap-2">
-        <div className="p-2.5 rounded-lg bg-[#0b0f17] border border-slate-800 text-center">
-          <span className="text-[10px] font-medium text-slate-400 block truncate">
+        <div className="p-2 bg-[#141211] border border-[#44403c] text-center">
+          <span className="text-[10px] font-pixel text-[#a8a29e] block">
             Kepatuhan Prompt
           </span>
-          <span className="text-lg font-bold text-indigo-400 font-mono tabular-nums">
+          <span className="text-base font-bold text-[#fbbf24] font-tech tabular-nums">
             {evaluation.adherenceScore}%
           </span>
         </div>
 
-        <div className="p-2.5 rounded-lg bg-[#0b0f17] border border-slate-800 text-center">
-          <span className="text-[10px] font-medium text-slate-400 block truncate">
+        <div className="p-2 bg-[#141211] border border-[#44403c] text-center">
+          <span className="text-[10px] font-pixel text-[#a8a29e] block">
             Siluet & Proporsi
           </span>
-          <span className="text-lg font-bold text-sky-400 font-mono tabular-nums">
+          <span className="text-base font-bold text-[#e7e5e4] font-tech tabular-nums">
             {evaluation.silhouetteScore}%
           </span>
         </div>
 
-        <div className="p-2.5 rounded-lg bg-[#0b0f17] border border-slate-800 text-center">
-          <span className="text-[10px] font-medium text-slate-400 block truncate">
+        <div className="p-2 bg-[#141211] border border-[#44403c] text-center">
+          <span className="text-[10px] font-pixel text-[#a8a29e] block">
             Harmoni Palet
           </span>
-          <span className="text-lg font-bold text-purple-400 font-mono tabular-nums">
+          <span className="text-base font-bold text-[#ea580c] font-tech tabular-nums">
             {evaluation.paletteHarmonyScore}%
           </span>
         </div>
       </div>
 
-      {/* Detailed Critique Commentary */}
-      <div className="p-3 bg-[#0b0f17] border border-slate-800/80 rounded-lg">
-        <span className="text-[11px] font-semibold text-slate-300 block mb-1">
-          Ulasan Direktur Seni AI (Critique):
+      {/* Critique Commentary */}
+      <div className="p-2.5 bg-[#141211] border border-[#44403c]">
+        <span className="text-[11px] font-pixel font-bold text-[#fbbf24] block mb-1">
+          Catatan Mandor Penempa:
         </span>
-        <p className="text-xs text-slate-400 leading-relaxed">
+        <p className="text-xs font-body text-[#e7e5e4] leading-relaxed">
           {evaluation.critique}
         </p>
       </div>
 
-      {/* Detected Features vs Missing */}
-      <div className="space-y-2">
-        <div>
-          <span className="text-[11px] font-semibold text-slate-300 block mb-1.5">
-            Fitur Visual Terdeteksi:
+      {/* Suggested Fixes */}
+      {evaluation.suggestedFixes && evaluation.suggestedFixes.length > 0 && (
+        <div className="space-y-1.5 pt-1">
+          <span className="text-[11px] font-pixel font-bold text-[#a8a29e] block">
+            Langkah Penyempurnaan:
           </span>
-          <div className="flex flex-wrap gap-1.5">
-            {evaluation.detectedFeatures.map((feat, i) => (
-              <span
-                key={i}
-                className="text-[11px] px-2 py-0.5 rounded bg-slate-800/80 text-emerald-300 border border-emerald-900/40 flex items-center gap-1"
-              >
-                <Check className="w-3 h-3 text-emerald-400" />
-                {feat}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {evaluation.missingFeatures.length > 0 && (
-          <div>
-            <span className="text-[11px] font-semibold text-amber-400 block mb-1.5">
-              Catatan Penyesuaian:
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {evaluation.missingFeatures.map((miss, i) => (
-                <span
-                  key={i}
-                  className="text-[11px] px-2 py-0.5 rounded bg-amber-950/40 text-amber-300 border border-amber-800/40 flex items-center gap-1"
-                >
-                  <AlertCircle className="w-3 h-3 text-amber-400" />
-                  {miss}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Suggested Fixes & Refine Button */}
-      {evaluation.suggestedFixes.length > 0 && (
-        <div className="pt-2 border-t border-slate-800/80 flex flex-col gap-2">
-          <span className="text-[11px] font-semibold text-slate-300">
-            Rekomendasi Optimasi:
-          </span>
-          <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
+          <ul className="space-y-1">
             {evaluation.suggestedFixes.map((fix, idx) => (
-              <li key={idx} className="leading-relaxed">
-                {fix}
+              <li
+                key={idx}
+                className="text-[11px] font-body text-[#a8a29e] flex items-start gap-1.5"
+              >
+                <span className="text-[#ea580c] font-bold font-tech">•</span>
+                <span>{fix}</span>
               </li>
             ))}
           </ul>
-
-          <button
-            onClick={onApplyRefinement}
-            disabled={isRefining}
-            className="mt-1 w-full py-2 px-3 text-xs font-semibold rounded-lg bg-emerald-600/90 hover:bg-emerald-600 text-white transition-colors flex items-center justify-center gap-2 shadow"
-          >
-            {isRefining ? (
-              <>
-                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Menjalankan AI Refinement...</span>
-              </>
-            ) : (
-              <>
-                <Wrench className="w-3.5 h-3.5" />
-                <span>Terapkan Refinement Otomatis Sekarang</span>
-              </>
-            )}
-          </button>
         </div>
       )}
+
+      {/* Action Button: Refinement */}
+      <div className="pt-2">
+        <button
+          onClick={onApplyRefinement}
+          disabled={isRefining}
+          className="w-full forge-btn-secondary py-2 px-3 text-xs flex items-center justify-center gap-2"
+        >
+          <Hammer className="w-3.5 h-3.5 text-[#fbbf24]" />
+          <span>{isRefining ? 'Merapikan Terak...' : 'Pukul Rapikan Terak & Pixel'}</span>
+        </button>
+      </div>
     </div>
   );
 };

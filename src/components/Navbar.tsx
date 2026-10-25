@@ -1,10 +1,19 @@
 import React from 'react';
-import { Cpu, Sparkles, FolderArchive, BookOpen, Layers } from 'lucide-react';
+import {
+  FolderArchive,
+  BookOpen,
+  Cpu,
+  Grid3X3,
+  Hammer,
+  PlusSquare,
+  FileCode
+} from 'lucide-react';
 
 interface NavbarProps {
   onOpenSettings: () => void;
   onOpenPresets: () => void;
   onOpenDocs: () => void;
+  onOpenSheetModal: () => void;
   onNewSprite: () => void;
   providerName: string;
 }
@@ -13,58 +22,101 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSettings,
   onOpenPresets,
   onOpenDocs,
+  onOpenSheetModal,
   onNewSprite,
   providerName
 }) => {
   return (
-    <header className="flex items-center justify-between gap-8 px-6 py-3.5 border-b border-slate-800 bg-[#0f1523]/90 backdrop-blur-md sticky top-0 z-40">
-      {/* Zone 1: Single text element wordmark */}
-      <div className="flex items-center gap-3 shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-mono font-bold text-base">
-          PX
+    <header className="w-full bg-[#1c1917] border-b-2 border-[#44403c] px-3 sm:px-5 py-2.5 flex items-center justify-between gap-4 select-none sticky top-0 z-40">
+      {/* Brand & Forge Anvil Wordmark */}
+      <div className="flex items-center gap-3">
+        {/* Pixel Anvil Icon */}
+        <div className="w-8 h-8 bg-[#292524] border-2 border-[#000] shadow-[2px_2px_0_#000] flex items-center justify-center shrink-0">
+          <svg
+            className="w-5 h-5 text-[#ea580c]"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            shapeRendering="crispEdges"
+          >
+            {/* 16x16 Pixel Anvil with Hammer */}
+            <rect x="2" y="12" width="12" height="2" fill="#44403c" />
+            <rect x="4" y="10" width="8" height="2" fill="#a8a29e" />
+            <rect x="3" y="6" width="10" height="4" fill="#e7e5e4" />
+            <rect x="1" y="6" width="3" height="2" fill="#ea580c" />
+            <rect x="11" y="3" width="2" height="4" fill="#fbbf24" />
+            <rect x="9" y="2" width="5" height="2" fill="#ea580c" />
+          </svg>
         </div>
-        <span className="text-lg font-bold tracking-tight text-white whitespace-nowrap">
-          PixelForge <span className="text-indigo-400 font-medium text-sm">Studio</span>
-        </span>
+
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <span className="font-pixel text-base sm:text-lg font-bold text-[#e7e5e4] tracking-wide leading-none">
+              PIXEL<span className="text-[#ea580c]">FORGE</span>
+            </span>
+            <span className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-pixel text-[#fbbf24] bg-[#292524] border border-[#44403c]">
+              v2.5
+            </span>
+          </div>
+          <span className="text-[10px] font-tech text-[#a8a29e] leading-tight">
+            Bengkel Sprite 2D & Animasi Cel
+          </span>
+        </div>
       </div>
 
-      {/* Zone 2: Clean single-line text navigation links */}
-      <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-300">
+      {/* Navigation Buttons (Retro Chiseled Tabs) */}
+      <nav className="flex items-center gap-2 sm:gap-3">
+        {/* Sheet 3x4 Modal Button */}
+        <button
+          onClick={onOpenSheetModal}
+          className="forge-btn-secondary px-2.5 py-1 text-xs flex items-center gap-1.5"
+          title="Buka Sprite Sheet 3x4 referensi"
+        >
+          <Grid3X3 className="w-3.5 h-3.5 text-[#fbbf24]" />
+          <span className="hidden md:inline">Sheet 3x4</span>
+        </button>
+
+        {/* Preset Gallery */}
         <button
           onClick={onOpenPresets}
-          className="flex items-center gap-1.5 hover:text-white transition-colors whitespace-nowrap shrink-0 text-slate-300"
+          className="forge-btn-secondary px-2.5 py-1 text-xs flex items-center gap-1.5"
+          title="Galeri Preset Karakter"
         >
-          <FolderArchive className="w-4 h-4 text-indigo-400" />
-          <span>Preset Galeri</span>
+          <FolderArchive className="w-3.5 h-3.5 text-[#ea580c]" />
+          <span className="hidden md:inline">Preset</span>
         </button>
 
+        {/* Engine Config / Settings */}
         <button
           onClick={onOpenSettings}
-          className="flex items-center gap-1.5 hover:text-white transition-colors whitespace-nowrap shrink-0 text-slate-300"
+          className="forge-btn-secondary px-2.5 py-1 text-xs flex items-center gap-1.5"
+          title="Konfigurasi Engine Penempa"
         >
-          <Cpu className="w-4 h-4 text-emerald-400" />
-          <span>AI Engine: <strong className="text-emerald-400 font-normal">{providerName}</strong></span>
+          <Cpu className="w-3.5 h-3.5 text-[#a8a29e]" />
+          <span className="hidden lg:inline text-[11px] font-tech text-[#a8a29e]">
+            {providerName.split(' ')[0]}
+          </span>
         </button>
 
+        {/* Docs Button */}
         <button
           onClick={onOpenDocs}
-          className="flex items-center gap-1.5 hover:text-white transition-colors whitespace-nowrap shrink-0 text-slate-300"
+          className="forge-btn-secondary px-2.5 py-1 text-xs flex items-center gap-1.5"
+          title="Buku Panduan Penempaan"
         >
-          <BookOpen className="w-4 h-4 text-sky-400" />
-          <span>Panduan (Ollama & MCP)</span>
+          <BookOpen className="w-3.5 h-3.5 text-[#e7e5e4]" />
+          <span className="hidden sm:inline">Panduan</span>
         </button>
-      </nav>
 
-      {/* Zone 3: 1 primary action */}
-      <div className="flex items-center gap-3 shrink-0">
+        {/* New Character Button */}
         <button
           onClick={onNewSprite}
-          className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-500 active:scale-[0.98] transition-all shadow-md shadow-indigo-600/30 flex items-center gap-1.5 whitespace-nowrap shrink-0"
+          className="forge-btn-primary px-3 py-1 text-xs flex items-center gap-1.5"
+          title="Mulai kanvas karakter baru"
         >
-          <Sparkles className="w-3.5 h-3.5" />
+          <PlusSquare className="w-3.5 h-3.5 text-[#1c1917]" />
           <span>Karakter Baru</span>
         </button>
-      </div>
+      </nav>
     </header>
   );
 };

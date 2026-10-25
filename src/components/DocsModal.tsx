@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, X, Terminal, Cpu, Check, ExternalLink } from 'lucide-react';
+import { BookOpen, X, Terminal, Cpu } from 'lucide-react';
 
 interface DocsModalProps {
   isOpen: boolean;
@@ -10,101 +10,107 @@ export const DocsModal: React.FC<DocsModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="w-full max-w-2xl bg-[#121826] border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+      <div className="w-full max-w-2xl bg-[#1c1917] border-2 border-[#44403c] shadow-[6px_6px_0_#000] flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-[#0f1523]">
-          <div className="flex items-center gap-2.5">
-            <BookOpen className="w-5 h-5 text-sky-400" />
+        <div className="flex items-center justify-between p-3.5 border-b-2 border-[#44403c] bg-[#292524]">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-[#fbbf24]" />
             <div>
-              <h2 className="text-sm font-bold text-white">
-                Panduan Integrasi AI (Ollama, MCP & OmniRoute)
+              <h2 className="font-pixel text-sm font-bold text-[#e7e5e4] uppercase tracking-wide">
+                Buku Panduan Penempaan
               </h2>
-              <p className="text-xs text-slate-400">
-                Cara menghubungkan model LLM lokal atau protokol kustom ke PixelForge
+              <p className="text-[11px] font-body text-[#a8a29e]">
+                Petunjuk menghubungkan model lokal (Ollama), MCP, atau endpoint mandiri
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1 text-[#a8a29e] hover:text-[#e7e5e4] border border-[#44403c] hover:bg-[#44403c]"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-5 overflow-y-auto space-y-5 text-xs text-slate-300">
-          {/* Section 1: Ollama Local LLM */}
-          <div className="p-4 rounded-lg bg-[#0b0f17] border border-slate-800 space-y-2.5">
-            <div className="flex items-center gap-2 text-indigo-400 font-semibold text-sm">
+        <div className="p-4 overflow-y-auto space-y-4 text-xs font-body text-[#e7e5e4]">
+          {/* Section 1: Ollama Local */}
+          <div className="p-3 bg-[#292524] border-2 border-[#44403c] space-y-2">
+            <div className="flex items-center gap-2 text-[#fbbf24] font-pixel text-xs font-bold">
               <Terminal className="w-4 h-4" />
-              <span>1. Menjalankan Local LLM dengan Ollama</span>
+              <span>1. Menjalankan Model Lokal dengan Ollama</span>
             </div>
-            <p className="text-slate-400 leading-relaxed">
-              Ollama memungkinkan Anda menjalankan model bahasa berukuran 1B hingga 70B langsung di GPU/CPU komputer Anda tanpa biaya API eksternal.
+            <p className="text-[#a8a29e] leading-relaxed">
+              Ollama memungkinkan Anda menjalankan model di mesin komputer Anda sendiri tanpa biaya API eksternal.
             </p>
-            <div className="p-3 bg-black/60 rounded-md font-mono text-[11px] text-emerald-400 space-y-1">
-              <div># 1. Unduh model pilihan di terminal:</div>
-              <div className="text-white">ollama run llama3</div>
-              <div className="text-slate-500"># Atau model coding seperti: ollama run qwen2.5-coder</div>
-              <div className="pt-1"># 2. Aktifkan Ollama dengan izin CORS untuk web studio:</div>
-              <div className="text-white">OLLAMA_ORIGINS=&quot;*&quot; ollama serve</div>
+            <div className="p-2.5 bg-[#141211] border border-[#000] font-tech text-[11px] text-[#fbbf24] space-y-1">
+              <div className="text-[#a8a29e]"># 1. Jalankan model di terminal:</div>
+              <div className="text-[#e7e5e4]">ollama run llama3</div>
+              <div className="text-[#a8a29e] pt-1"># 2. Aktifkan Ollama dengan izin CORS:</div>
+              <div className="text-[#e7e5e4]">OLLAMA_ORIGINS=&quot;*&quot; ollama serve</div>
             </div>
-            <p className="text-slate-400 text-[11px]">
-              Setelah itu, buka menu <strong>AI Engine</strong> di navigasi atas, pilih <strong>Ollama Local LLM</strong>, dan tekan <strong>Uji Koneksi</strong>.
+            <p className="text-[#a8a29e] text-[11px]">
+              Buka menu <strong>Engine</strong> di atas, pilih <strong>Ollama Local</strong>, lalu uji sambungan.
             </p>
           </div>
 
-          {/* Section 2: MCP (Model Context Protocol) */}
-          <div className="p-4 rounded-lg bg-[#0b0f17] border border-slate-800 space-y-2.5">
-            <div className="flex items-center gap-2 text-emerald-400 font-semibold text-sm">
+          {/* Section 2: MCP */}
+          <div className="p-3 bg-[#292524] border-2 border-[#44403c] space-y-2">
+            <div className="flex items-center gap-2 text-[#ea580c] font-pixel text-xs font-bold">
               <Cpu className="w-4 h-4" />
-              <span>2. Menghubungkan MCP (Model Context Protocol)</span>
+              <span>2. Integrasi Model Context Protocol (MCP)</span>
             </div>
-            <p className="text-slate-400 leading-relaxed">
-              PixelForge mendukung standar MCP via HTTP JSON-RPC 2.0. Server MCP Anda mengekspos endpoint tool call:
+            <p className="text-[#a8a29e] leading-relaxed">
+              Standar integrasi agen untuk komunikasi terstruktur antara editor dan runtime LLM via JSON-RPC.
             </p>
-            <div className="p-3 bg-black/60 rounded-md font-mono text-[11px] text-sky-400">
-              POST http://localhost:8000/mcp<br />
-              &#123; &quot;method&quot;: &quot;tools/call&quot;, &quot;params&quot;: &#123; &quot;name&quot;: &quot;pixel_craft_v1&quot; &#125; &#125;
+            <div className="p-2.5 bg-[#141211] border border-[#000] font-tech text-[11px] text-[#ea580c] space-y-1">
+              <div className="text-[#a8a29e]"># Jalankan server daemon MCP pada port 8000:</div>
+              <div className="text-[#e7e5e4]">python -m mcp_server_pixelforge --port 8000</div>
             </div>
-            <p className="text-slate-400 text-[11px]">
-              Setiap panggilan AI akan dialihkan melalui protokol tool calling MCP untuk orkestrasi agentik multi-langkah.
-            </p>
           </div>
 
-          {/* Section 3: OmniRoute & Custom Endpoints */}
-          <div className="p-4 rounded-lg bg-[#0b0f17] border border-slate-800 space-y-2.5">
-            <div className="flex items-center gap-2 text-purple-400 font-semibold text-sm">
-              <ExternalLink className="w-4 h-4" />
-              <span>3. OmniRoute, OpenRouter & LM Studio</span>
-            </div>
-            <p className="text-slate-400 leading-relaxed">
-              Gunakan endpoint yang kompatibel dengan format OpenAI API (seperti LM Studio di <code className="text-white">http://localhost:1234/v1</code> atau OpenRouter/OmniRoute). Cukup masukkan Base URL dan API Key Anda di panel pengaturan.
-            </p>
-          </div>
-
-          {/* Section 4: Tips Prompt Pixel Art */}
-          <div className="p-4 rounded-lg bg-[#0b0f17] border border-slate-800 space-y-2">
-            <span className="font-semibold text-slate-200 block text-xs">
-              Tips Menulis Prompt Karakter yang Bagus:
+          {/* Section 3: Shortcut Keys */}
+          <div className="p-3 bg-[#292524] border-2 border-[#44403c] space-y-2">
+            <span className="font-pixel text-xs font-bold text-[#fbbf24] block">
+              Pintasan Keyboard (Shortcuts):
             </span>
-            <ul className="list-disc list-inside space-y-1 text-slate-400 text-[11px] leading-relaxed">
-              <li>Sebutkan warna spesifik (contoh: <em>armor perak, jubah merah tua, mata cyan menyala</em>).</li>
-              <li>Sebutkan senjata atau aksesoris di tangan (<em>pedang plasma, perisai salib, tongkat kristal</em>).</li>
-              <li>Pilih resolusi <strong>32x32</strong> untuk gaya retro 8/16-bit klasik, atau <strong>64x64/128x128</strong> untuk game modern dengan siluet lebih detail.</li>
-            </ul>
+            <div className="grid grid-cols-2 gap-2 text-[11px] font-tech">
+              <div className="flex items-center justify-between p-1.5 bg-[#141211] border border-[#44403c]">
+                <span className="text-[#a8a29e]">Pena / Pensil</span>
+                <span className="text-[#fbbf24] font-bold">[B]</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 bg-[#141211] border border-[#44403c]">
+                <span className="text-[#a8a29e]">Penghapus</span>
+                <span className="text-[#fbbf24] font-bold">[E]</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 bg-[#141211] border border-[#44403c]">
+                <span className="text-[#a8a29e]">Ember / Fill</span>
+                <span className="text-[#fbbf24] font-bold">[G]</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 bg-[#141211] border border-[#44403c]">
+                <span className="text-[#a8a29e]">Pipet Warna</span>
+                <span className="text-[#fbbf24] font-bold">[I]</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 bg-[#141211] border border-[#44403c]">
+                <span className="text-[#a8a29e]">Putar / Jeda</span>
+                <span className="text-[#fbbf24] font-bold">[SPACE]</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 bg-[#141211] border border-[#44403c]">
+                <span className="text-[#a8a29e]">Undo / Redo</span>
+                <span className="text-[#fbbf24] font-bold">[Ctrl+Z / Y]</span>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end p-4 border-t border-slate-800 bg-[#0f1523]">
+        <div className="p-3 bg-[#292524] border-t-2 border-[#44403c] flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors"
+            className="forge-btn-primary px-4 py-1.5 text-xs font-pixel"
           >
-            Mengerti & Tutup
+            Tutup Panduan
           </button>
         </div>
       </div>

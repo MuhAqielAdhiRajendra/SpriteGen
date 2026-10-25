@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CharacterDirection,
   SpriteResolution,
@@ -7,7 +7,7 @@ import {
   ColorGradingMode
 } from '../types/sprite';
 import { PALETTES } from '../utils/pixelEngine';
-import { Sparkles, Settings, Film, Palette, Compass, Zap } from 'lucide-react';
+import { Hammer, Sliders, Shield, Flame, Check } from 'lucide-react';
 
 interface PromptFormProps {
   prompt: string;
@@ -30,30 +30,28 @@ interface PromptFormProps {
   onOpenSettings: () => void;
 }
 
-const PROMPT_SUGGESTIONS = [
-  '+ Zirah Perak Bersinar',
-  '+ Jubah Merah Panjang',
-  '+ Pedang Kristal Cyan',
-  '+ Sayap Hitam Gagak',
-  '+ Visor Cyberpunk Neon',
-  '+ Perisai Emas',
-  '+ (Animasi) Berjalan',
-  '+ (Animasi) Serangan Tebas'
+const FORGE_SUGGESTIONS = [
+  'Zirah perak tebal',
+  'Jubah merah pendek',
+  'Pedang baja bermata ganda',
+  'Perisai lambang matahari',
+  'Tudung pengembara',
+  'Tongkat kristal sihir'
 ];
 
-const COLOR_GRADING_OPTIONS: { id: ColorGradingMode; label: string; desc: string }[] = [
-  { id: 'vibrant', label: 'Vibrant & Bersih', desc: 'Saturasi tinggi, kontras tajam tanpa bayangan kotor' },
-  { id: 'neon', label: 'Cyber Neon Glow', desc: 'Aksen cyan, magenta, dan pendaran cahaya futuristik' },
-  { id: 'warm', label: 'Warm Royal', desc: 'Grading hangat bernuansa emas, jingga, dan merah delima' },
-  { id: 'cool', label: 'Cool Crystal', desc: 'Grading dingin bernuansa biru es, perak, dan aqua' },
-  { id: 'pastel', label: 'Soft Pastel', desc: 'Warna lembut ala game cozy indie fantasy' }
+const ANIMATION_OPTIONS: { id: AnimationType; label: string; desc: string }[] = [
+  { id: 'idle', label: 'Idle', desc: 'Siaga napas' },
+  { id: 'walk', label: 'Walk', desc: 'Siklus langkah' },
+  { id: 'attack', label: 'Attack', desc: 'Tebasan pedang' },
+  { id: 'hurt', label: 'Hurt', desc: 'Terpukul mundur' }
 ];
 
-const ANIMATION_OPTIONS: { id: AnimationType; label: string; icon: string }[] = [
-  { id: 'walk', label: 'Jalan (Walk)', icon: '🚶' },
-  { id: 'attack', label: 'Serang (Attack)', icon: '⚔️' },
-  { id: 'hurt', label: 'Terluka (Hurt)', icon: '💥' },
-  { id: 'idle', label: 'Idle Napas (Idle)', icon: '💨' }
+const FORGE_LOADING_TEXTS = [
+  'Memanaskan tungku api...',
+  'Menempa kerangka besi...',
+  'Membentuk siluet tubuh...',
+  'Mewarnai zirah & perlengkapan...',
+  'Mendinginkan bilah baja...'
 ];
 
 export const PromptForm: React.FC<PromptFormProps> = ({
@@ -76,12 +74,22 @@ export const PromptForm: React.FC<PromptFormProps> = ({
   activeProvider,
   onOpenSettings
 }) => {
+  const [loadingTextIndex, setLoadingTextIndex] = useState(0);
+
+  // Rotate loading texts every 800ms
+  useEffect(() => {
+    if (!isGenerating) return;
+    const interval = setInterval(() => {
+      setLoadingTextIndex((prev) => (prev + 1) % FORGE_LOADING_TEXTS.length);
+    }, 850);
+    return () => clearInterval(interval);
+  }, [isGenerating]);
+
   const addTag = (tag: string) => {
-    const cleanTag = tag.replace(/^\+\s*/, '');
     if (prompt.trim()) {
-      setPrompt(`${prompt.trim()}, ${cleanTag}`);
+      setPrompt(`${prompt.trim()}, ${tag}`);
     } else {
-      setPrompt(cleanTag);
+      setPrompt(tag);
     }
   };
 
@@ -94,245 +102,243 @@ export const PromptForm: React.FC<PromptFormProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-5 p-5 bg-[#121826] border border-slate-800 rounded-xl shadow-lg">
-      {/* Title & Active Engine Status */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
-        <div>
-          <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles className="w-4 h-4 text-indigo-400" />
-            <span>Generator Pixel Art</span>
+    <div className="flex flex-col gap-4 p-4 bg-[#292524] border-2 border-[#44403c] shadow-[4px_4px_0_#000]">
+      {/* Panel Header */}
+      <div className="flex items-center justify-between pb-2 border-b-2 border-[#44403c]">
+        <div className="flex items-center gap-2">
+          <Flame className="w-4 h-4 text-[#ea580c]" />
+          <h2 className="font-pixel text-sm font-bold text-[#e7e5e4] uppercase tracking-wider">
+            Tungku Penempaan
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Deskripsikan karakter bebas tanpa batasan kelas/arktipe
-          </p>
         </div>
+
         <button
           onClick={onOpenSettings}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700/80 rounded-md border border-slate-700/60 transition-colors"
-          title="Pengaturan AI Engine (Gemini / Ollama / MCP / OmniRoute)"
+          className="text-[11px] font-tech text-[#a8a29e] hover:text-[#fbbf24] flex items-center gap-1 border border-[#44403c] px-1.5 py-0.5 bg-[#1c1917]"
+          title="Konfigurasi Engine"
         >
-          <Settings className="w-3.5 h-3.5 text-indigo-400" />
-          <span className="truncate max-w-[100px]">{activeProvider.name}</span>
+          <span className="w-2 h-2 bg-[#ea580c] inline-block" />
+          <span>{activeProvider.type.toUpperCase()}</span>
         </button>
       </div>
 
-      {/* Main Prompt Textarea */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs font-semibold text-slate-300">
-            Deskripsi Visual Karakter (Prompt)
+      {/* 1. Prompt Input Section */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <label className="font-pixel text-[#e7e5e4] font-bold">
+            Deskripsi Karakter:
           </label>
-          <span className="text-[10px] text-slate-500">
-            AI membuat sesuai teks yang diinput
+          <span className="text-[10px] font-tech text-[#a8a29e]">
+            {prompt.length}/240
           </span>
         </div>
+
         <textarea
-          rows={3}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Contoh: Kesatria wanita berzirah perak dengan jubah biru tua, pedang tipis kristal, dan tiara permata..."
-          className="w-full px-3.5 py-2.5 text-sm bg-[#0b0f17] border border-slate-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 rounded-lg text-slate-100 placeholder-slate-500 resize-none transition-colors"
+          placeholder="Ksatria zirah biru, pedang, jubah merah pendek..."
+          rows={3}
+          disabled={isGenerating}
+          className="w-full p-2.5 bg-[#141211] border-2 border-[#44403c] text-sm font-body text-[#e7e5e4] placeholder-[#78716c] focus:border-[#fbbf24] outline-none resize-none"
         />
 
-        {/* Quick Tag Pills */}
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {PROMPT_SUGGESTIONS.map((tag) => (
+        {/* Suggestion Chips */}
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {FORGE_SUGGESTIONS.map((tag) => (
             <button
               key={tag}
               type="button"
               onClick={() => addTag(tag)}
-              className="text-[11px] px-2 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer border border-slate-700/40"
+              disabled={isGenerating}
+              className="text-[10px] font-tech px-2 py-0.5 bg-[#1c1917] hover:bg-[#44403c] text-[#a8a29e] hover:text-[#e7e5e4] border border-[#44403c] transition-colors"
             >
-              {tag}
+              +{tag}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Animation Trigger Section (Static vs Animation logic) */}
-      <div className="p-3 bg-[#0b0f17] rounded-lg border border-slate-800">
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-            <Film className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Permintaan Animasi (Opsional)</span>
-          </label>
-          <span className="text-[10px] text-emerald-400 font-mono">
-            {requestedAnimations.length === 0 ? 'Mode Statis (Tanpa Gerak)' : `${requestedAnimations.length} Animasi Dipilih`}
-          </span>
+      {/* 2. Resolution Selection (32, 64, 128) */}
+      <div className="space-y-1.5">
+        <label className="font-pixel text-xs text-[#e7e5e4] font-bold block">
+          Resolusi Kanvas (Pixel):
+        </label>
+        <div className="grid grid-cols-3 gap-2">
+          {([32, 64, 128] as SpriteResolution[]).map((res) => (
+            <button
+              key={res}
+              type="button"
+              onClick={() => setResolution(res)}
+              disabled={isGenerating}
+              className={`py-2 px-1 text-center font-pixel text-xs border-2 transition-all ${
+                resolution === res
+                  ? 'bg-[#ea580c] text-[#1c1917] border-[#000] font-bold shadow-[2px_2px_0_#000]'
+                  : 'bg-[#1c1917] text-[#a8a29e] border-[#44403c] hover:text-[#e7e5e4]'
+              }`}
+            >
+              <div>{res}×{res}</div>
+              <div className="text-[9px] font-tech opacity-80">
+                {res === 32 ? 'Klasik 16-bit' : res === 64 ? 'Detail RPG' : 'Resolusi Tinggi'}
+              </div>
+            </button>
+          ))}
         </div>
-        <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
-          Jika tidak memilih animasi atau tidak menulis &quot;animasi/jalan/serang&quot; di prompt, AI <span className="text-slate-200 font-medium">hanya akan membuat karakter tunggal</span>.
-        </p>
+      </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-          {ANIMATION_OPTIONS.map((opt) => {
-            const isSelected = requestedAnimations.includes(opt.id);
-            return (
+      {/* 3. Direction & Palette */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* Direction */}
+        <div className="space-y-1">
+          <label className="font-pixel text-xs text-[#e7e5e4] font-bold block">
+            Arah Hadap:
+          </label>
+          <div className="grid grid-cols-3 gap-1">
+            {(
+              [
+                { id: 'front', label: 'Depan' },
+                { id: 'right', label: 'Kanan' },
+                { id: 'back', label: 'Belakang' }
+              ] as { id: CharacterDirection; label: string }[]
+            ).map((dir) => (
               <button
-                key={opt.id}
+                key={dir.id}
                 type="button"
-                onClick={() => toggleAnimation(opt.id)}
-                className={`py-1.5 px-2 rounded-md text-xs font-medium flex items-center justify-center gap-1.5 transition-all border ${
-                  isSelected
-                    ? 'bg-emerald-600/20 border-emerald-500/80 text-emerald-300 font-semibold shadow-sm'
-                    : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                onClick={() => setDirection(dir.id)}
+                disabled={isGenerating}
+                className={`py-1 text-[11px] font-pixel border ${
+                  direction === dir.id
+                    ? 'bg-[#fbbf24] text-[#1c1917] border-[#000] font-bold'
+                    : 'bg-[#1c1917] text-[#a8a29e] border-[#44403c] hover:text-[#e7e5e4]'
                 }`}
               >
-                <span>{opt.icon}</span>
-                <span className="text-[11px]">{opt.label}</span>
+                {dir.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Palette Preset */}
+        <div className="space-y-1">
+          <label className="font-pixel text-xs text-[#e7e5e4] font-bold block">
+            Palet Warna:
+          </label>
+          <select
+            value={paletteKey}
+            onChange={(e) => setPaletteKey(e.target.value)}
+            disabled={isGenerating}
+            className="w-full py-1 px-1.5 bg-[#141211] border-2 border-[#44403c] text-xs font-tech text-[#e7e5e4] focus:border-[#fbbf24] outline-none"
+          >
+            {Object.values(PALETTES).map((pal) => (
+              <option key={pal.id} value={pal.id}>
+                {pal.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* 4. Requested Animations (Checkboxes) */}
+      <div className="space-y-1.5">
+        <label className="font-pixel text-xs text-[#e7e5e4] font-bold block">
+          Rangkaian Gerak Animasi Cel:
+        </label>
+        <div className="grid grid-cols-2 gap-1.5">
+          {ANIMATION_OPTIONS.map((anim) => {
+            const isChecked = requestedAnimations.includes(anim.id);
+            return (
+              <button
+                key={anim.id}
+                type="button"
+                onClick={() => toggleAnimation(anim.id)}
+                disabled={isGenerating}
+                className={`flex items-center gap-2 p-1.5 border text-left transition-colors ${
+                  isChecked
+                    ? 'bg-[#1c1917] border-[#fbbf24] text-[#fbbf24]'
+                    : 'bg-[#141211] border-[#44403c] text-[#a8a29e] hover:text-[#e7e5e4]'
+                }`}
+              >
+                <div
+                  className={`w-3.5 h-3.5 border flex items-center justify-center shrink-0 ${
+                    isChecked ? 'bg-[#fbbf24] border-[#000]' : 'border-[#44403c]'
+                  }`}
+                >
+                  {isChecked && <Check className="w-3 h-3 text-[#1c1917] stroke-[3]" />}
+                </div>
+                <div>
+                  <div className="text-xs font-pixel font-bold">{anim.label}</div>
+                  <div className="text-[9px] font-tech text-[#a8a29e]">{anim.desc}</div>
+                </div>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Resolution Selector (32x32, 64x64, 128x128) */}
-      <div>
-        <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-          Ukuran Resolusi Sprite
+      {/* 5. Auto Refine Slag Toggle */}
+      <div className="flex items-center justify-between pt-1 border-t border-[#44403c]">
+        <label
+          htmlFor="autoRefineToggle"
+          className="text-xs font-body text-[#a8a29e] flex items-center gap-1.5 cursor-pointer"
+        >
+          <Shield className="w-3.5 h-3.5 text-[#fbbf24]" />
+          <span>Pembersihan Terak Otomatis (Hapus orphan pixel)</span>
         </label>
-        <div className="grid grid-cols-3 gap-2 p-1 bg-[#0b0f17] rounded-lg border border-slate-800">
-          {([32, 64, 128] as SpriteResolution[]).map((res) => (
-            <button
-              key={res}
-              type="button"
-              onClick={() => setResolution(res)}
-              className={`py-2 text-xs font-semibold rounded-md transition-all flex flex-col items-center gap-0.5 ${
-                resolution === res
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-            >
-              <span>{res} × {res}</span>
-              <span className="text-[10px] font-normal opacity-75">
-                {res === 32 ? 'Retro 16-bit' : res === 64 ? 'HD Standard' : 'Detail Tinggi'}
+        <button
+          id="autoRefineToggle"
+          type="button"
+          onClick={() => setAutoRefine(!autoRefine)}
+          disabled={isGenerating}
+          className={`w-8 h-4 border-2 border-[#000] p-0.5 flex items-center transition-colors ${
+            autoRefine ? 'bg-[#ea580c] justify-end' : 'bg-[#141211] justify-start'
+          }`}
+        >
+          <div className="w-2.5 h-2.5 bg-[#e7e5e4] shadow-sm" />
+        </button>
+      </div>
+
+      {/* 6. Primary Action: "Tempa Karakter" with 16x16 Blacksmith Mascot */}
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={onGenerate}
+          disabled={isGenerating || !prompt.trim()}
+          className="w-full forge-btn-primary py-3 px-4 flex items-center justify-center gap-2 text-sm uppercase tracking-wider relative overflow-hidden"
+        >
+          {isGenerating ? (
+            <div className="flex items-center gap-3">
+              {/* 16x16 Pixel Blacksmith Mascot */}
+              <div className="w-6 h-6 flex items-center justify-center">
+                <svg
+                  className="w-5 h-5 animate-hammer"
+                  viewBox="0 0 16 16"
+                  shapeRendering="crispEdges"
+                >
+                  {/* Blacksmith Anvil */}
+                  <rect x="2" y="12" width="12" height="3" fill="#1c1917" />
+                  <rect x="4" y="10" width="8" height="2" fill="#44403c" />
+                  {/* Glowing Iron Ingot on Anvil */}
+                  <rect x="6" y="9" width="4" height="2" fill="#ea580c" />
+                  <rect x="7" y="9" width="2" height="1" fill="#fbbf24" />
+                  {/* Hammer Head & Handle */}
+                  <rect x="8" y="3" width="2" height="5" fill="#a8a29e" />
+                  <rect x="6" y="2" width="6" height="3" fill="#1c1917" />
+                  {/* Sparks */}
+                  <rect x="5" y="7" width="1" height="1" fill="#fbbf24" />
+                  <rect x="10" y="8" width="1" height="1" fill="#fbbf24" />
+                </svg>
+              </div>
+              <span className="font-pixel text-[#1c1917]">
+                {FORGE_LOADING_TEXTS[loadingTextIndex]}
               </span>
-            </button>
-          ))}
-        </div>
+            </div>
+          ) : (
+            <>
+              <Hammer className="w-4 h-4 text-[#1c1917]" />
+              <span>Tempa Karakter</span>
+            </>
+          )}
+        </button>
       </div>
-
-      {/* Color Grading & Direction */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Color Grading Style */}
-        <div>
-          <label className="text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-            <Palette className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Color Grading</span>
-          </label>
-          <select
-            value={colorGrading}
-            onChange={(e) => setColorGrading(e.target.value as ColorGradingMode)}
-            className="w-full px-3 py-2 text-xs bg-[#0b0f17] border border-slate-700 rounded-lg text-slate-200 focus:border-indigo-500 focus:outline-none"
-          >
-            {COLOR_GRADING_OPTIONS.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-          <span className="text-[10px] text-slate-400 mt-1 block">
-            {COLOR_GRADING_OPTIONS.find((c) => c.id === colorGrading)?.desc}
-          </span>
-        </div>
-
-        {/* Direction Orientation */}
-        <div>
-          <label className="text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-            <Compass className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Orientasi Sudut</span>
-          </label>
-          <select
-            value={direction}
-            onChange={(e) => setDirection(e.target.value as CharacterDirection)}
-            className="w-full px-3 py-2 text-xs bg-[#0b0f17] border border-slate-700 rounded-lg text-slate-200 focus:border-indigo-500 focus:outline-none"
-          >
-            <option value="front">Tampak Depan (Front View)</option>
-            <option value="side">Tampak Samping (Side Profile)</option>
-            <option value="isometric">Isometrik (3/4 View)</option>
-          </select>
-          <span className="text-[10px] text-slate-400 mt-1 block">
-            Karakter bersih tanpa bayangan tanah di bawahnya
-          </span>
-        </div>
-      </div>
-
-      {/* Palette Selector */}
-      <div>
-        <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-          Palet Warna Terindeks
-        </label>
-        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-          {Object.values(PALETTES).map((pal) => (
-            <button
-              key={pal.id}
-              type="button"
-              onClick={() => setPaletteKey(pal.id)}
-              className={`w-full text-left p-2 rounded-lg border text-xs transition-all flex items-center justify-between gap-2 ${
-                paletteKey === pal.id
-                  ? 'border-indigo-500 bg-indigo-950/20 text-white'
-                  : 'border-slate-800 bg-[#0b0f17] text-slate-400 hover:border-slate-700 hover:text-slate-200'
-              }`}
-            >
-              <div className="truncate">
-                <span className="font-semibold block truncate text-slate-200">{pal.name}</span>
-                <span className="text-[10px] text-slate-500 block truncate">{pal.description}</span>
-              </div>
-              <div className="flex items-center gap-0.5 shrink-0">
-                {pal.colors.slice(0, 7).map((color, idx) => (
-                  <span
-                    key={idx}
-                    className="w-2.5 h-4 rounded-xs border border-black/40"
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Auto-Refinement Toggle */}
-      <div className="flex items-center justify-between pt-1">
-        <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300 select-none">
-          <input
-            type="checkbox"
-            checked={autoRefine}
-            onChange={(e) => setAutoRefine(e.target.checked)}
-            className="w-4 h-4 rounded text-indigo-600 bg-slate-900 border-slate-700 focus:ring-0 focus:ring-offset-0"
-          />
-          <span>AI Auto-Refinement (Pembersihan Kontur & Specular)</span>
-        </label>
-      </div>
-
-      {/* Primary Submit Button */}
-      <button
-        onClick={onGenerate}
-        disabled={isGenerating || !prompt.trim()}
-        className={`w-full py-3 px-4 rounded-lg font-semibold text-xs tracking-wide uppercase transition-all flex items-center justify-center gap-2 shadow-lg ${
-          isGenerating
-            ? 'bg-slate-800 text-slate-400 cursor-not-allowed'
-            : !prompt.trim()
-            ? 'bg-slate-800/60 text-slate-500 cursor-not-allowed'
-            : 'bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white shadow-indigo-600/30'
-        }`}
-      >
-        {isGenerating ? (
-          <>
-            <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-            <span>Memproses Karakter ({resolution}×{resolution})...</span>
-          </>
-        ) : (
-          <>
-            <Sparkles className="w-4 h-4" />
-            <span>
-              {requestedAnimations.length > 0
-                ? `Buat Karakter + ${requestedAnimations.length} Animasi`
-                : 'Buat Karakter Pixel Art'}
-            </span>
-          </>
-        )}
-      </button>
     </div>
   );
 };

@@ -132,243 +132,155 @@ export const ProviderSettingsModal: React.FC<ProviderSettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="w-full max-w-2xl bg-[#121826] border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+      <div className="w-full max-w-2xl bg-[#1c1917] border-2 border-[#44403c] shadow-[6px_6px_0_#000] flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-[#0f1523]">
-          <div className="flex items-center gap-2.5">
-            <Cpu className="w-5 h-5 text-emerald-400" />
+        <div className="flex items-center justify-between p-3.5 border-b-2 border-[#44403c] bg-[#292524]">
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-[#ea580c]" />
             <div>
-              <h2 className="text-sm font-bold text-white">
-                Konfigurasi AI Provider (BYO-AI & Local LLM)
+              <h2 className="font-pixel text-sm font-bold text-[#e7e5e4] uppercase tracking-wide">
+                Konfigurasi Engine Penempa
               </h2>
-              <p className="text-xs text-slate-400">
-                Gunakan Ollama lokal, MCP Bridge, OmniRoute, atau model cloud pilihan Anda
+              <p className="text-[11px] font-body text-[#a8a29e]">
+                Pilih sumber penalaran visual karakter (Cloud, Local Ollama, atau MCP)
               </p>
             </div>
           </div>
+
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1 text-[#a8a29e] hover:text-[#e7e5e4] border border-[#44403c] hover:bg-[#44403c]"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-5 overflow-y-auto space-y-5">
-          {/* Provider Selection Tabs */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-2">
-              Pilih Sumber Model AI:
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {(Object.keys(DEFAULT_PROVIDERS) as AIProviderType[]).map((type) => {
-                const item = DEFAULT_PROVIDERS[type];
-                const isSelected = selectedType === type;
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => handleSelectType(type)}
-                    className={`p-2.5 rounded-lg border text-left transition-all ${
-                      isSelected
-                        ? 'bg-indigo-950/40 border-indigo-500 text-white shadow-md'
-                        : 'bg-[#0b0f17] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                    }`}
-                  >
-                    <span className="font-semibold text-xs block truncate text-slate-200">
-                      {item.name}
-                    </span>
-                    <span className="text-[10px] text-slate-400 block truncate mt-0.5">
-                      {type === 'ollama' ? 'Local PC' : type === 'mcp' ? 'Protocol' : type === 'gemini' ? 'Cloud Built-in' : 'API Route'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+        {/* Body */}
+        <div className="p-4 overflow-y-auto space-y-4">
+          {/* Provider Selector Tabs */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+            {[
+              { id: 'gemini' as const, label: 'Gemini' },
+              { id: 'ollama' as const, label: 'Ollama' },
+              { id: 'omniroute' as const, label: 'OmniRoute' },
+              { id: 'mcp' as const, label: 'MCP' },
+              { id: 'custom' as const, label: 'Custom' }
+            ].map((p) => (
+              <button
+                key={p.id}
+                onClick={() => handleSelectType(p.id)}
+                className={`py-2 px-1 text-center font-pixel text-xs border-2 transition-all ${
+                  selectedType === p.id
+                    ? 'bg-[#ea580c] text-[#1c1917] border-[#000] font-bold shadow-[2px_2px_0_#000]'
+                    : 'bg-[#292524] text-[#a8a29e] border-[#44403c] hover:text-[#e7e5e4]'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
 
-          {/* Form Fields for Active Provider */}
-          <div className="p-4 rounded-lg bg-[#0b0f17] border border-slate-800 space-y-3.5">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Nama Tampilan Provider
-              </label>
-              <input
-                type="text"
-                value={config.name}
-                onChange={(e) => setConfig({ ...config, name: e.target.value })}
-                className="w-full px-3 py-2 text-xs bg-[#121826] border border-slate-700 rounded-lg text-slate-200 focus:border-indigo-500 focus:outline-none"
-              />
-            </div>
+          {/* Provider Description */}
+          <div className="p-3 bg-[#292524] border border-[#44403c]">
+            <span className="font-pixel text-xs font-bold text-[#fbbf24] block mb-0.5">
+              {config.name}
+            </span>
+            <p className="text-xs font-body text-[#a8a29e]">
+              {config.description}
+            </p>
+          </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Base URL / Endpoint Host
-              </label>
-              <input
-                type="text"
-                value={config.baseUrl}
-                onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
-                placeholder="http://localhost:11434 atau https://api.openrouter.ai/v1"
-                className="w-full px-3 py-2 text-xs bg-[#121826] border border-slate-700 rounded-lg text-slate-200 font-mono focus:border-indigo-500 focus:outline-none"
-              />
-              {selectedType === 'ollama' && (
-                <p className="text-[11px] text-emerald-400 mt-1.5 flex items-center gap-1">
-                  <HelpCircle className="w-3.5 h-3.5 shrink-0" />
-                  <span>Jalankan Ollama di terminal dengan: <code className="bg-black/60 px-1 py-0.5 rounded text-[10px]">OLLAMA_ORIGINS=&quot;*&quot; ollama serve</code></span>
-                </p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+          {/* Form Settings */}
+          <div className="space-y-3 font-body text-xs">
+            {config.type !== 'gemini' && (
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Nama Model
+                <label className="font-pixel text-[#e7e5e4] block mb-1">
+                  Base URL / Endpoint Host:
                 </label>
                 <input
                   type="text"
-                  value={config.model}
-                  onChange={(e) => setConfig({ ...config, model: e.target.value })}
-                  placeholder={selectedType === 'ollama' ? 'llama3, mistral, llava' : 'model ID'}
-                  className="w-full px-3 py-2 text-xs bg-[#121826] border border-slate-700 rounded-lg text-slate-200 font-mono focus:border-indigo-500 focus:outline-none"
+                  value={config.baseUrl || ''}
+                  onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
+                  className="w-full p-2 forge-input font-tech text-xs"
                 />
               </div>
+            )}
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Temperature
-                </label>
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0"
-                  max="1"
-                  value={config.temperature}
-                  onChange={(e) => setConfig({ ...config, temperature: parseFloat(e.target.value) || 0.2 })}
-                  className="w-full px-3 py-2 text-xs bg-[#121826] border border-slate-700 rounded-lg text-slate-200 font-mono focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
+            <div>
+              <label className="font-pixel text-[#e7e5e4] block mb-1">
+                Nama Model:
+              </label>
+              <input
+                type="text"
+                value={config.model || ''}
+                onChange={(e) => setConfig({ ...config, model: e.target.value })}
+                className="w-full p-2 forge-input font-tech text-xs"
+              />
             </div>
 
-            {(selectedType === 'omniroute' || selectedType === 'custom') && (
+            {(config.type === 'omniroute' || config.type === 'custom') && (
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  API Key / Token Otentikasi
+                <label className="font-pixel text-[#e7e5e4] block mb-1">
+                  API Key:
                 </label>
                 <input
                   type="password"
                   value={config.apiKey || ''}
                   onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
                   placeholder="sk-or-v1-..."
-                  className="w-full px-3 py-2 text-xs bg-[#121826] border border-slate-700 rounded-lg text-slate-200 font-mono focus:border-indigo-500 focus:outline-none"
-                />
-                <span className="text-[10px] text-slate-500 mt-1 block">
-                  API Key disimpan secara aman di browser client dan hanya diteruskan saat memanggil AI.
-                </span>
-              </div>
-            )}
-
-            {selectedType === 'mcp' && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Nama MCP Tool
-                </label>
-                <input
-                  type="text"
-                  value={config.mcpToolName || ''}
-                  onChange={(e) => setConfig({ ...config, mcpToolName: e.target.value })}
-                  placeholder="pixel_craft_v1"
-                  className="w-full px-3 py-2 text-xs bg-[#121826] border border-slate-700 rounded-lg text-slate-200 font-mono focus:border-indigo-500 focus:outline-none"
+                  className="w-full p-2 forge-input font-tech text-xs"
                 />
               </div>
             )}
           </div>
 
-          {/* Connection Test Box */}
-          <div className="flex items-center justify-between p-3 rounded-lg bg-[#0b0f17] border border-slate-800">
-            <div className="text-xs">
-              <span className="font-semibold text-slate-300 block">
-                Verifikasi Koneksi AI
-              </span>
-              <span className="text-[11px] text-slate-500">
-                Lakukan ping latensi untuk memastikan model aktif dan siap menerima prompt
-              </span>
-            </div>
+          {/* Test Connection Button & Result */}
+          <div className="pt-2 border-t border-[#44403c] space-y-2" ref={testBoxRef}>
             <button
-              type="button"
               onClick={handleTestConnection}
               disabled={isTesting}
-              className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors flex items-center gap-1.5 shrink-0"
+              className="forge-btn-secondary py-1.5 px-3 text-xs flex items-center gap-1.5 font-pixel"
             >
-              {isTesting ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-                  <span>Menguji...</span>
-                </>
-              ) : (
-                <>
-                  <Activity className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Uji Koneksi</span>
-                </>
-              )}
+              <Activity className="w-3.5 h-3.5 text-[#fbbf24]" />
+              <span>{isTesting ? 'Menguji Sambungan...' : 'Uji Koneksi Endpoint'}</span>
             </button>
-          </div>
 
-          {/* Test Result Message */}
-          {testResult && (
-            <div
-              ref={testBoxRef}
-              className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
-                testResult.success
-                  ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
-                  : 'bg-rose-950/30 border-rose-500/40 text-rose-200'
-              }`}
-            >
-              {testResult.success ? (
-                <Check className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" />
-              )}
-              <div className="space-y-1">
-                <div className="font-semibold flex items-center gap-2">
-                  <span>{testResult.message}</span>
-                  {testResult.latencyMs > 0 && (
-                    <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-black/40">
-                      {testResult.latencyMs}ms
-                    </span>
-                  )}
+            {testResult && (
+              <div
+                className={`p-2.5 border-2 text-xs ${
+                  testResult.success
+                    ? 'bg-[#141211] border-[#fbbf24] text-[#fbbf24]'
+                    : 'bg-[#141211] border-[#b91c1c] text-[#e7e5e4]'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-pixel font-bold">
+                  {testResult.success ? <Check className="w-4 h-4 text-[#fbbf24]" /> : <AlertCircle className="w-4 h-4 text-[#b91c1c]" />}
+                  <span>{testResult.message} ({testResult.latencyMs}ms)</span>
                 </div>
                 {testResult.hint && (
-                  <p className="text-[11px] text-slate-300 font-normal">
-                    {testResult.hint}
-                  </p>
-                )}
-                {testResult.details?.models && (
-                  <p className="text-[11px] text-slate-300 font-mono">
-                    Model tersedia di Ollama: {testResult.details.models.join(', ') || 'Belum ada model yang di-pull'}
+                  <p className="mt-1 text-[11px] font-tech text-[#a8a29e]">
+                    Petunjuk: {testResult.hint}
                   </p>
                 )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-2 p-4 border-t border-slate-800 bg-[#0f1523]">
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 p-3 bg-[#292524] border-t-2 border-[#44403c]">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white rounded-lg transition-colors"
+            className="forge-btn-secondary px-3 py-1.5 text-xs font-pixel"
           >
             Batal
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all shadow-md shadow-indigo-600/30 flex items-center gap-1.5"
+            className="forge-btn-primary px-4 py-1.5 text-xs font-pixel"
           >
-            <Check className="w-3.5 h-3.5" />
-            <span>Simpan & Gunakan Provider</span>
+            Simpan Konfigurasi
           </button>
         </div>
       </div>

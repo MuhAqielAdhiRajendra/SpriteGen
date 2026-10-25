@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AnimationType, SpriteFrame } from '../types/sprite';
-import { Play, Pause, Film, Sparkles, Repeat, Sliders } from 'lucide-react';
+import { Play, Pause, Film, Repeat, Sliders, Flame } from 'lucide-react';
 
 interface AnimationPreviewProps {
   animations: Record<string, SpriteFrame[]>;
@@ -91,41 +91,36 @@ export const AnimationPreview: React.FC<AnimationPreviewProps> = ({
   ];
 
   return (
-    <div className="flex flex-col gap-3 p-4 bg-[#121826] border border-slate-800 rounded-xl shadow-lg">
-      <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-white uppercase tracking-wider">
-          <Film className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Pratinjau Animasi Cel Flipbook</span>
+    <div className="flex flex-col gap-3 p-3 bg-[#292524] border-2 border-[#44403c] shadow-[4px_4px_0_#000]">
+      {/* Header */}
+      <div className="flex items-center justify-between pb-2 border-b-2 border-[#44403c]">
+        <div className="flex items-center gap-1.5 font-pixel text-xs font-bold text-[#e7e5e4] uppercase tracking-wide">
+          <Film className="w-4 h-4 text-[#fbbf24]" />
+          <span>Monitor Animasi Cel</span>
         </div>
-        <div className="flex items-center gap-2">
-          {hasMotion ? (
-            <span className="text-[10px] font-medium text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded">
-              {activeFrames.length} Cel Frame
-            </span>
-          ) : (
-            <span className="text-[10px] font-medium text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded">
-              1 Frame (Statis)
-            </span>
-          )}
-          <span className="text-[11px] font-mono text-slate-400">
-            Frame {currentFrameIndex + 1} / {activeFrames.length || 1}
+        <div className="flex items-center gap-2 font-tech text-xs">
+          <span className="text-[#fbbf24] px-1.5 py-0.5 bg-[#141211] border border-[#44403c]">
+            {activeFrames.length} Cel
+          </span>
+          <span className="text-[#a8a29e]">
+            F:{currentFrameIndex + 1}/{activeFrames.length || 1}
           </span>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-center gap-4">
-        {/* Animated Canvas */}
-        <div className="w-28 h-28 shrink-0 flex items-center justify-center p-2 bg-[#0b0f17] rounded-lg border border-slate-800 checkerboard-pattern overflow-hidden">
+      <div className="flex flex-col sm:flex-row items-center gap-3">
+        {/* Animated Canvas Monitor Box */}
+        <div className="w-24 h-24 sm:w-28 sm:h-28 shrink-0 flex items-center justify-center p-1.5 bg-[#141211] border-2 border-[#000] checkerboard-pattern overflow-hidden shadow-[inset_2px_2px_0_rgba(0,0,0,0.6)]">
           <canvas
             ref={canvasRef}
             className="w-full h-full object-contain pixelated"
           />
         </div>
 
-        {/* Controls and Animation Selection */}
-        <div className="flex-1 w-full flex flex-col gap-2.5">
-          {/* Animation Set Tabs */}
-          <div className="flex flex-wrap gap-1 p-1 bg-[#0b0f17] rounded-lg border border-slate-800">
+        {/* Animation Set & Playback Controls */}
+        <div className="flex-1 w-full flex flex-col gap-2">
+          {/* Movement Tabs */}
+          <div className="grid grid-cols-4 gap-1">
             {allPossibleAnims.map((anim) => {
               const framesInAnim = animations[anim.id];
               const exists = framesInAnim && framesInAnim.length > 0;
@@ -142,61 +137,60 @@ export const AnimationPreview: React.FC<AnimationPreviewProps> = ({
                       onSelectAnimation(anim.id);
                     }
                   }}
-                  className={`py-1 px-2.5 text-[11px] font-medium rounded capitalize transition-all flex items-center gap-1.5 ${
+                  className={`py-1 text-center font-pixel text-[11px] border transition-all ${
                     isActive
-                      ? 'bg-indigo-600 text-white font-semibold shadow-sm'
+                      ? 'bg-[#ea580c] text-[#1c1917] border-[#000] font-bold shadow-[2px_2px_0_#000]'
                       : exists
-                      ? 'text-slate-300 hover:text-white hover:bg-slate-800'
-                      : 'text-slate-500 hover:text-slate-300 hover:bg-slate-850 border border-dashed border-slate-800'
+                      ? 'bg-[#1c1917] text-[#e7e5e4] border-[#44403c] hover:bg-[#44403c]'
+                      : 'bg-[#141211] text-[#78716c] border-dashed border-[#44403c] hover:text-[#fbbf24]'
                   }`}
-                  title={exists ? `Pilih animasi ${anim.label}` : `Minta AI buat rangkaian cel ${anim.label}`}
+                  title={exists ? `Gerakan ${anim.label}` : `Tempa gerakan ${anim.label}`}
                 >
-                  <span>{anim.label}</span>
-                  {exists ? (
-                    <span className="text-[9px] font-mono px-1 rounded bg-black/40 text-slate-300">
-                      {framesInAnim.length}
-                    </span>
-                  ) : (
-                    <span className="text-[9px] text-indigo-400 font-semibold">+ Buat</span>
-                  )}
+                  <div>{anim.label}</div>
+                  <div className="text-[9px] font-tech opacity-80">
+                    {exists ? `${framesInAnim.length}F` : '+Tempa'}
+                  </div>
                 </button>
               );
             })}
           </div>
 
           {/* Playback Controls & FPS */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsPlaying(!isPlaying)}
-              className="p-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-white transition-colors"
-              title={isPlaying ? 'Jeda Pratinjau' : 'Putar Pratinjau'}
-            >
-              {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-            </button>
+          <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#44403c]">
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setIsPlaying(!isPlaying)}
+                className="forge-btn-secondary p-1 text-xs"
+                title={isPlaying ? 'Jeda' : 'Putar'}
+              >
+                {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              </button>
 
-            <button
-              onClick={onToggleLoop}
-              className={`p-1.5 rounded-md border text-xs transition-colors ${
-                loop
-                  ? 'bg-indigo-950/60 border-indigo-500 text-indigo-300'
-                  : 'bg-[#0b0f17] border-slate-800 text-slate-500'
-              }`}
-              title={loop ? 'Loop Aktif' : 'Loop Non-aktif'}
-            >
-              <Repeat className="w-3.5 h-3.5" />
-            </button>
+              <button
+                onClick={onToggleLoop}
+                className={`p-1 border text-xs font-pixel ${
+                  loop
+                    ? 'bg-[#fbbf24] text-[#1c1917] border-[#000]'
+                    : 'bg-[#141211] text-[#78716c] border-[#44403c]'
+                }`}
+                title={loop ? 'Loop Aktif' : 'Loop Mati'}
+              >
+                <Repeat className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
-            <div className="flex-1 flex items-center gap-2">
-              <span className="text-[10px] text-slate-400 whitespace-nowrap font-mono">
+            {/* FPS Control */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-tech text-[#a8a29e]">
                 {fps} FPS
               </span>
               <input
                 type="range"
-                min={4}
-                max={24}
+                min={2}
+                max={20}
                 value={fps}
                 onChange={(e) => onChangeFps(Number(e.target.value))}
-                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                className="w-20 sm:w-24 h-1.5 bg-[#141211] appearance-none cursor-pointer accent-[#ea580c] border border-[#44403c]"
               />
             </div>
           </div>

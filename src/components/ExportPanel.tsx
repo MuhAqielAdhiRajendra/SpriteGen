@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CharacterSprite } from '../types/sprite';
-import { Download, FileJson, Palette, Copy, Check, Image as ImageIcon, Film, PlaySquare } from 'lucide-react';
+import { Download, FileJson, Palette, Copy, Check, Image as ImageIcon, Film, PlaySquare, Package } from 'lucide-react';
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 
 interface ExportPanelProps {
@@ -38,7 +38,7 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({ sprite }) => {
     const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${sprite.name.toLowerCase().replace(/\s+/g, '_')}_frame_${sprite.currentFrameIndex + 1}_${size}px.png`;
+    a.download = `${sprite.name.toLowerCase().replace(/\s+/g, '_')}_cel_${sprite.currentFrameIndex + 1}_${size}px.png`;
     a.click();
   };
 
@@ -73,7 +73,7 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({ sprite }) => {
     const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${sprite.name.toLowerCase().replace(/\s+/g, '_')}_spritesheet_${totalFrames}frames.png`;
+    a.download = `${sprite.name.toLowerCase().replace(/\s+/g, '_')}_sheet_${totalFrames}frames.png`;
     a.click();
   };
 
@@ -109,16 +109,13 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({ sprite }) => {
           }
         }
 
-        const { data } = ctx.getImageData(0, 0, outWidth, outHeight);
-        const palette = quantize(data, 256, { format: 'rgba4444' });
-        const index = applyPalette(data, palette);
-        const transparentIndex = palette.findIndex((c: number[]) => c[3] === 0);
+        const rawData = ctx.getImageData(0, 0, outWidth, outHeight).data;
+        const palette = quantize(rawData, 64);
+        const index = applyPalette(rawData, palette);
 
         gif.writeFrame(index, outWidth, outHeight, {
           palette,
-          delay,
-          transparent: transparentIndex >= 0,
-          transparentIndex: transparentIndex >= 0 ? transparentIndex : undefined
+          delay
         });
       }
 
@@ -127,86 +124,80 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({ sprite }) => {
       const blob = new Blob([buffer as any], { type: 'image/gif' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
+      a.download = `${sprite.name.toLowerCase().replace(/\s+/g, '_')}_animasi.gif`;
       a.href = url;
-      a.download = `${sprite.name.toLowerCase().replace(/\s+/g, '_')}_${sprite.frames.length}frames.gif`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Failed to encode GIF:', err);
+      console.error('GIF export error:', err);
     } finally {
       setIsExportingGif(false);
     }
   };
 
-  // Export JSON Metadata
   const copyJson = () => {
     const exportData = {
       name: sprite.name,
       prompt: sprite.prompt,
-      frameWidth: sprite.resolution,
-      frameHeight: sprite.resolution,
-      frameCount: sprite.frames.length,
-      fps: sprite.fps,
-      loop: sprite.loop,
+      resolution: sprite.resolution,
       palette: sprite.palette,
-      colorGrading: sprite.colorGrading,
-      direction: sprite.direction,
-      isAnimated: sprite.isAnimated,
+      fps: sprite.fps,
+      totalFrames: sprite.frames.length,
       frames: sprite.frames.map((f, i) => ({
         index: i,
-        id: f.id,
         name: f.name,
         pixels: f.pixels
-      })),
-      aiEvaluation: sprite.aiEvaluation,
-      createdAt: sprite.createdAt
+      }))
     };
+
     navigator.clipboard.writeText(JSON.stringify(exportData, null, 2));
     setCopiedJson(true);
     setTimeout(() => setCopiedJson(false), 2000);
   };
 
-  // Download Palette
   const downloadPaletteHex = () => {
-    const content = sprite.palette.join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
+    const hexContent = sprite.palette.join('\n');
+    const blob = new Blob([hexContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${sprite.paletteName}_palette.hex`;
+    a.download = `${sprite.name.toLowerCase().replace(/\s+/g, '_')}_palet.hex`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="flex flex-col gap-4 p-4 bg-[#121826] border border-slate-800 rounded-xl shadow-lg">
-      <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
-        <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-          <Download className="w-4 h-4 text-indigo-400" />
-          <span>Opsi Ekspor & Aset Game</span>
-        </h3>
-        <span className="text-[11px] font-mono text-slate-400">
-          {sprite.frames.length} Frame · {sprite.resolution}×{sprite.resolution}
+    <div className="flex flex-col gap-4 p-4 bg-[#292524] border-2 border-[#44403c] shadow-[4px_4px_0_#000]">
+      {/* Header */}
+      <div className="flex items-center justify-between pb-2 border-b-2 border-[#44403c]">
+        <div className="flex items-center gap-2">
+          <Package className="w-4 h-4 text-[#ea580c]" />
+          <h3 className="font-pixel text-xs font-bold text-[#e7e5e4] uppercase tracking-wider">
+            Ruang Ekspor Karakter
+          </h3>
+        </div>
+        <span className="text-[10px] font-tech text-[#fbbf24] px-1.5 py-0.5 bg-[#141211] border border-[#44403c]">
+          {sprite.resolution}×{sprite.resolution} PX
         </span>
       </div>
 
-      {/* Primary Export Actions: Spritesheet & Animated GIF */}
+      {/* Main Export Options (Spritesheet & GIF) */}
       <div className="space-y-2">
-        <span className="text-[11px] font-semibold text-slate-300 block">
-          Format Animasi Game Engine:
+        <span className="font-pixel text-xs text-[#a8a29e] block">
+          Format Animasi & Sheet Game Engine:
         </span>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {/* Spritesheet Button */}
           <button
             onClick={() => downloadSpriteSheet(2)}
-            className="p-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors shadow shadow-indigo-600/30"
-            title="Ekspor seluruh frame berjajar horizontal dalam satu file PNG transparan"
+            className="forge-btn-primary p-2.5 text-xs flex items-center gap-2"
+            title="Ekspor seluruh cel frame berjajar horizontal dalam satu file PNG"
           >
-            <PlaySquare className="w-4 h-4" />
+            <PlaySquare className="w-4 h-4 text-[#1c1917] shrink-0" />
             <div className="text-left">
-              <span className="block leading-tight">Spritesheet PNG</span>
-              <span className="text-[10px] text-indigo-200 font-normal">
-                {sprite.frames.length} frame berjajar horizontal
+              <span className="block font-bold">Spritesheet PNG</span>
+              <span className="text-[9px] font-tech font-normal opacity-90">
+                {sprite.frames.length} Cel Berjajar
               </span>
             </div>
           </button>
@@ -215,15 +206,15 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({ sprite }) => {
           <button
             onClick={downloadAnimatedGif}
             disabled={isExportingGif}
-            className="p-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors shadow shadow-emerald-600/30 disabled:opacity-50"
+            className="forge-btn-secondary p-2.5 text-xs flex items-center gap-2"
             title="Ekspor animasi flipbook ke format GIF transparan"
           >
-            <Film className="w-4 h-4" />
+            <Film className="w-4 h-4 text-[#fbbf24] shrink-0" />
             <div className="text-left">
-              <span className="block leading-tight">
-                {isExportingGif ? 'Mengencode GIF...' : 'GIF Animasi'}
+              <span className="block font-bold text-[#e7e5e4]">
+                {isExportingGif ? 'Mengencode...' : 'GIF Animasi'}
               </span>
-              <span className="text-[10px] text-emerald-200 font-normal">
+              <span className="text-[9px] font-tech text-[#a8a29e]">
                 {sprite.fps} FPS · Transparan
               </span>
             </div>
@@ -231,63 +222,60 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({ sprite }) => {
         </div>
       </div>
 
-      {/* Standalone Single Frame PNG resolutions */}
-      <div className="space-y-2 pt-2 border-t border-slate-800/80">
-        <span className="text-[11px] font-semibold text-slate-300 block">
-          Unduh Frame Aktif (#{sprite.currentFrameIndex + 1}) Satuan:
+      {/* Standalone Single Cel Frame PNG */}
+      <div className="space-y-1.5 pt-2 border-t-2 border-[#44403c]">
+        <span className="font-pixel text-xs text-[#a8a29e] block">
+          Unduh Cel Aktif (#{sprite.currentFrameIndex + 1}):
         </span>
         <div className="grid grid-cols-3 gap-2">
           <button
             onClick={() => downloadCurrentFramePng(1)}
-            className="p-2.5 rounded-lg bg-[#0b0f17] hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 text-xs text-slate-200 transition-colors flex flex-col items-center gap-1"
+            className="p-2 bg-[#141211] border-2 border-[#44403c] hover:border-[#fbbf24] text-center transition-colors"
           >
-            <ImageIcon className="w-4 h-4 text-indigo-400" />
-            <span className="font-semibold">Skala 1×</span>
-            <span className="text-[10px] text-slate-500 font-mono">
-              {sprite.resolution}×{sprite.resolution}
+            <span className="font-pixel text-xs text-[#e7e5e4] block">1× Asli</span>
+            <span className="text-[10px] font-tech text-[#a8a29e]">
+              {sprite.resolution}px
             </span>
           </button>
 
           <button
             onClick={() => downloadCurrentFramePng(4)}
-            className="p-2.5 rounded-lg bg-[#0b0f17] hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 text-xs text-slate-200 transition-colors flex flex-col items-center gap-1"
+            className="p-2 bg-[#141211] border-2 border-[#44403c] hover:border-[#fbbf24] text-center transition-colors"
           >
-            <ImageIcon className="w-4 h-4 text-sky-400" />
-            <span className="font-semibold">Skala 4× (Crisp)</span>
-            <span className="text-[10px] text-slate-500 font-mono">
-              {sprite.resolution * 4}×{sprite.resolution * 4}
+            <span className="font-pixel text-xs text-[#fbbf24] block">4× Crisp</span>
+            <span className="text-[10px] font-tech text-[#a8a29e]">
+              {sprite.resolution * 4}px
             </span>
           </button>
 
           <button
             onClick={() => downloadCurrentFramePng(8)}
-            className="p-2.5 rounded-lg bg-[#0b0f17] hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 text-xs text-slate-200 transition-colors flex flex-col items-center gap-1"
+            className="p-2 bg-[#141211] border-2 border-[#44403c] hover:border-[#fbbf24] text-center transition-colors"
           >
-            <ImageIcon className="w-4 h-4 text-purple-400" />
-            <span className="font-semibold">Skala 8× (HD)</span>
-            <span className="text-[10px] text-slate-500 font-mono">
-              {sprite.resolution * 8}×{sprite.resolution * 8}
+            <span className="font-pixel text-xs text-[#ea580c] block">8× HD</span>
+            <span className="text-[10px] font-tech text-[#a8a29e]">
+              {sprite.resolution * 8}px
             </span>
           </button>
         </div>
       </div>
 
-      {/* JSON & Palette Export */}
-      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
+      {/* JSON Matrix & Hex Palette */}
+      <div className="grid grid-cols-2 gap-2 pt-2 border-t-2 border-[#44403c]">
         <button
           onClick={copyJson}
-          className="py-2 px-3 rounded-lg bg-[#0b0f17] hover:bg-slate-800/80 border border-slate-800 text-xs text-slate-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors"
+          className="forge-btn-secondary py-1.5 px-2 text-xs flex items-center justify-center gap-1.5"
         >
-          {copiedJson ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-          <span>{copiedJson ? 'Tersalin!' : 'Salin JSON Matriks'}</span>
+          {copiedJson ? <Check className="w-3.5 h-3.5 text-[#fbbf24]" /> : <Copy className="w-3.5 h-3.5" />}
+          <span>{copiedJson ? 'Tersalin!' : 'Salin JSON'}</span>
         </button>
 
         <button
           onClick={downloadPaletteHex}
-          className="py-2 px-3 rounded-lg bg-[#0b0f17] hover:bg-slate-800/80 border border-slate-800 text-xs text-slate-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors"
+          className="forge-btn-secondary py-1.5 px-2 text-xs flex items-center justify-center gap-1.5"
         >
-          <Palette className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Unduh Palet .HEX</span>
+          <Palette className="w-3.5 h-3.5 text-[#ea580c]" />
+          <span>Unduh .HEX</span>
         </button>
       </div>
     </div>
