@@ -41,6 +41,8 @@ export interface PipelineStep {
   intermediatePreview?: string[][];
 }
 
+import type { CharacterSpec } from '../utils/pixelforgeSpec';
+
 export interface CharacterSprite {
   id: string;
   name: string;
@@ -66,6 +68,7 @@ export interface CharacterSprite {
   providerUsed: string;
   modelUsed: string;
   createdAt: string;
+  spec?: CharacterSpec;
 }
 
 export type AIProviderType = 'gemini' | 'ollama' | 'omniroute' | 'mcp' | 'custom';

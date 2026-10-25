@@ -5,15 +5,19 @@ import {
   GenerationRequest,
   PipelineStep,
   SpriteEvaluation,
-  SpriteResolution,
-  AnimationType,
-  ColorGradingMode
+  AnimationType
 } from '../types/sprite';
 import {
-  applyAutoRefinement,
-  evaluateSpriteMatrix,
   generateProceduralCharacter,
   detectRequestedAnimations,
+  evaluateSpriteMatrix,
+  applyAutoRefinement,
+  specFromPromptProcedural,
+  validateSequence,
+  buildPalette,
+  CharacterSpec,
+  validateSpec,
+  DEFAULT_SPEC,
   PALETTES
 } from './pixelEngine';
 
@@ -21,6 +25,8 @@ export type PipelineProgressCallback = (step: PipelineStep, partialSprite?: Part
 
 /**
  * Executes the complete observable AI generation pipeline
+ * Pipeline: prompt -> AI hanya mengisi CharacterSpec (enum terbatas) -> validasi + retry
+ *           -> kode menyusun frame dari spec + pose -> post-process -> validasi antar frame.
  */
 export async function executeSpriteGeneration(
   request: GenerationRequest,
@@ -45,19 +51,19 @@ export async function executeSpriteGeneration(
     onProgress(step, partial);
   };
 
-  const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+  const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
   // Determine requested animations
   const detectedAnimations = detectRequestedAnimations(prompt, explicitAnimations);
   const isAnimated = detectedAnimations.length > 0;
 
-  // STEP 1: Prompt Parsing & Semantic Intent Deconstruction
+  // STEP 1: Prompt Parsing & AI Art Director (CharacterSpec with Enum Validation)
   const step1Start = Date.now();
   emitStep({
     id: 'step-1-parse',
     phase: 'parse',
-    title: 'Analisis Semantik Prompt & Intent Visual',
-    description: `Mendekonstruksi deskripsi karakter: "${prompt}" melalui ${providerConfig.name}`,
+    title: 'Analisis Semantik AI Art Director',
+    description: `Mengekstrak CharacterSpec (archetype, body, head, weapon, offhand, cape, palet 6 warna) via ${providerConfig.name}`,
     timestamp: new Date().toLocaleTimeString('id-ID'),
     durationMs: 0,
     status: 'running',
@@ -68,8 +74,9 @@ export async function executeSpriteGeneration(
     }
   });
 
+  let resolvedSpec: CharacterSpec = specFromPromptProcedural(prompt);
   let resolvedDirection: CharacterDirection = direction;
-  let resolvedFeatures: string[] = [];
+  let validationNote = '';
 
   try {
     if (providerConfig.type === 'gemini') {
@@ -81,9 +88,14 @@ export async function executeSpriteGeneration(
 
       if (resp && resp.ok) {
         const data = await resp.json();
-        if (data.analysis) {
-          if (data.analysis.direction) resolvedDirection = data.analysis.direction;
-          resolvedFeatures.push(`Anatomi: ${JSON.stringify(data.analysis.anatomy || {})}`);
+        if (data.spec) {
+          const { spec: validSpec, errors } = validateSpec(data.spec);
+          if (validSpec) {
+            resolvedSpec = validSpec;
+            validationNote = 'Output AI tervalidasi 100% sesuai schema enum CharacterSpec';
+          } else {
+            validationNote = `Validasi fallback: ${errors.join(', ')}`;
+          }
         }
       }
     } else if (providerConfig.type === 'ollama') {
@@ -95,7 +107,7 @@ export async function executeSpriteGeneration(
           endpoint: '/api/generate',
           payload: {
             model: providerConfig.model || 'llama3',
-            prompt: `Parse pixel character prompt: "${prompt}". Identify visual features and equipment. Reply briefly.`,
+            prompt: `Sebagai Art Director, klasifikasikan prompt "${prompt}" menjadi JSON CharacterSpec (archetype, body, head, weapon, offhand, cape).`,
             stream: false
           }
         })
@@ -103,122 +115,185 @@ export async function executeSpriteGeneration(
 
       if (resp && resp.ok) {
         const data = await resp.json();
-        if (data.response) {
-          resolvedFeatures.push(`Ollama Output: ${data.response.substring(0, 80)}...`);
+        try {
+          const rawParsed = JSON.parse(data.response?.replace(/```json|```/g, '').trim() || '{}');
+          const { spec: validSpec } = validateSpec(rawParsed);
+          if (validSpec) resolvedSpec = validSpec;
+        } catch {
+          // fallback procedural
         }
       }
-    } else if (providerConfig.type === 'mcp') {
-      resolvedFeatures.push(`MCP Tool: ${providerConfig.mcpToolName || 'pixel_craft_v1'}`);
     }
   } catch (err: any) {
-    resolvedFeatures.push(`Fallback parser active: ${err?.message || 'Default'}`);
+    validationNote = `Procedural Art Director aktif: ${err?.message || 'Default'}`;
+  }
+
+  // Ensure requested animations from prompt or options are reflected
+  if (detectedAnimations.length > 0) {
+    const animSet = new Set([...resolvedSpec.animations, ...detectedAnimations]);
+    resolvedSpec.animations = Array.from(animSet).filter(
+      (a): a is 'idle' | 'walk' | 'attack' => a === 'idle' || a === 'walk' || a === 'attack'
+    );
   }
 
   await delay(180);
   emitStep({
     id: 'step-1-parse',
     phase: 'parse',
-    title: 'Analisis Semantik Selesai',
-    description: isAnimated
-      ? `Permintaan Animasi Terdeteksi: [${detectedAnimations.join(', ')}]. Pose: [${resolvedDirection}], Resolusi: [${resolution}x${resolution}]`
-      : `Mode Karakter Statis (User hanya meminta karakter tanpa animasi). Pose: [${resolvedDirection}], Resolusi: [${resolution}x${resolution}]`,
+    title: 'CharacterSpec AI Terbentuk & Tervalidasi',
+    description: `Archetype: [${resolvedSpec.archetype}], Body: [${resolvedSpec.body}], Head: [${resolvedSpec.head}], Weapon: [${resolvedSpec.weapon}], Offhand: [${resolvedSpec.offhand}], Cape: [${resolvedSpec.cape}]. ${validationNote}`,
     timestamp: new Date().toLocaleTimeString('id-ID'),
     durationMs: Date.now() - step1Start,
     status: 'success',
     tokenCount: Math.round(prompt.length / 3) + 40,
-    details: { direction: resolvedDirection, isAnimated, detectedAnimations }
+    details: { spec: resolvedSpec, direction: resolvedDirection }
   });
 
-  // STEP 2: Color Palette & Color Grading Harmonization
+  // STEP 2: Color Ramp Shading & Palette Construction
   const step2Start = Date.now();
-  const palette = PALETTES[paletteName]?.colors || PALETTES.vibrant_rpg.colors;
+  const palRamps = buildPalette(resolvedSpec);
+  const palette = [
+    palRamps.outline,
+    resolvedSpec.palette.primary,
+    resolvedSpec.palette.secondary,
+    resolvedSpec.palette.accent,
+    resolvedSpec.palette.metal,
+    resolvedSpec.palette.skin,
+    resolvedSpec.palette.hair,
+    palRamps.highlight
+  ];
+
   emitStep({
     id: 'step-2-palette',
     phase: 'palette',
-    title: 'Harmonisasi Palet & Color Grading Bersih',
-    description: `Menerapkan grading "${colorGrading}" pada palet ${PALETTES[paletteName]?.name || 'Vibrant RPG'} tanpa bayangan kotor`,
+    title: 'Harmonisasi Ramp Shading Konsisten',
+    description: 'Menyusun ramp warna shadow (biru-ungu), base, dan light (krem hangat) serta 1px crisp outline otomatis',
     timestamp: new Date().toLocaleTimeString('id-ID'),
     durationMs: 0,
     status: 'running',
-    details: { paletteCount: palette.length, colorGrading }
+    details: { palette, ramps: palRamps }
   });
 
   await delay(140);
   emitStep({
     id: 'step-2-palette',
     phase: 'palette',
-    title: 'Color Grading Divalidasi',
-    description: `Kontras tinggi aktif: Outline tegas (${palette[0]}), Midtone cerah (${palette[Math.floor(palette.length / 2)]}), Highlight specular (${palette[palette.length - 1]})`,
+    title: 'Palet & Ramp Shading Siap',
+    description: `Ramp: Primary [${resolvedSpec.palette.primary}], Secondary [${resolvedSpec.palette.secondary}], Accent [${resolvedSpec.palette.accent}], Metal [${resolvedSpec.palette.metal}]. Outline: ${palRamps.outline}`,
     timestamp: new Date().toLocaleTimeString('id-ID'),
     durationMs: Date.now() - step2Start,
     status: 'success',
-    details: { palette, colorGrading }
+    details: { palette, ramps: palRamps }
   });
 
-  // STEP 3: Silhouette & Skeleton Matrix Construction (Tanpa Bayangan Tanah)
+  // STEP 3: Frame Assembly from Spec + Pose Table (Cel Rendering)
   const step3Start = Date.now();
   emitStep({
     id: 'step-3-silhouette',
     phase: 'silhouette',
-    title: 'Konstruksi Siluet & Proporsi Grid Bebas Bayangan',
-    description: `Membangun matriks ${resolution}x${resolution} pixel: rasio kepala, bahu, torso, dan senjata (tanpa bayangan lantai)`,
+    title: 'Penyusunan Frame Cel dari Spec & Tabel Pose',
+    description: `Merender frame independen berbasis keyframe tabel pose (bodyDy, headDx/Dy, arm/leg angle, weaponAngle, capeSway) pada resolusi ${resolution}x${resolution}`,
     timestamp: new Date().toLocaleTimeString('id-ID'),
     durationMs: 0,
     status: 'running'
   });
 
-  // Generate character geometry
+  // Generate character cel frames using new spec & poses
   const generated = generateProceduralCharacter({
     prompt,
     resolution,
     paletteKey: paletteName,
     colorGrading,
     direction: resolvedDirection,
-    requestedAnimations: detectedAnimations
+    requestedAnimations: detectedAnimations,
+    spec: resolvedSpec
   });
 
   await delay(200);
-  emitStep({
-    id: 'step-3-silhouette',
-    phase: 'silhouette',
-    title: 'Siluet Berhasil Disusun',
-    description: `Siluet dasar terbentuk bersih tanpa bayangan kotor di bawah karakter`,
-    timestamp: new Date().toLocaleTimeString('id-ID'),
-    durationMs: Date.now() - step3Start,
-    status: 'success',
-    details: { features: generated.features },
-    intermediatePreview: generated.frames[0]?.pixels
-  }, { currentPixels: generated.frames[0]?.pixels });
+  emitStep(
+    {
+      id: 'step-3-silhouette',
+      phase: 'silhouette',
+      title: 'Penyusunan Frame Cel Selesai',
+      description: `Rangkaian cel frame terkonstruksi rapi tanpa translasi CSS atau rigging skeletal`,
+      timestamp: new Date().toLocaleTimeString('id-ID'),
+      durationMs: Date.now() - step3Start,
+      status: 'success',
+      details: { features: generated.features },
+      intermediatePreview: generated.frames[0]?.pixels
+    },
+    { currentPixels: generated.frames[0]?.pixels }
+  );
 
-  // STEP 4: Shading, Specular Highlights & Cel-Shaded Outlines
+  // STEP 4: Post-Processing per Frame
   const step4Start = Date.now();
   emitStep({
     id: 'step-4-shading',
     phase: 'shading',
-    title: 'Rendering Shading Bersih & Highlight Specular',
-    description: 'Menerapkan pencahayaan atas, specular glint tajam, dan outline perimetral transparan',
+    title: 'Pipeline Post-Processing (Quantize, Orphans, Ground Align, Outline)',
+    description: 'Menjalankan snap palet, pembersihan pixel yatim terisolasi, perataan telapak kaki ke groundY, dan composite layer slash FX',
     timestamp: new Date().toLocaleTimeString('id-ID'),
     durationMs: 0,
     status: 'running'
   });
 
   let currentPixels = generated.pixels;
-  await delay(200);
-  emitStep({
-    id: 'step-4-shading',
-    phase: 'shading',
-    title: 'Shading Cel-Shading Selesai',
-    description: 'Karakter memiliki warna cerah, highlight mengkilap, dan kontras tajam tanpa bayangan abu-abu',
-    timestamp: new Date().toLocaleTimeString('id-ID'),
-    durationMs: Date.now() - step4Start,
-    status: 'success',
-    intermediatePreview: currentPixels
-  }, { currentPixels });
+  await delay(180);
+  emitStep(
+    {
+      id: 'step-4-shading',
+      phase: 'shading',
+      title: 'Post-Processing Selesai',
+      description: 'Semua frame memiliki outline 1px presisi di sekeliling bodi dan garis tanah stabil di groundY',
+      timestamp: new Date().toLocaleTimeString('id-ID'),
+      durationMs: Date.now() - step4Start,
+      status: 'success',
+      intermediatePreview: currentPixels
+    },
+    { currentPixels }
+  );
 
-  // STEP 5: AI Self-Review & Vision Quality Inspection
+  // STEP 5: Cross-Frame Sequence Validation
   const step5Start = Date.now();
   emitStep({
-    id: 'step-5-review',
+    id: 'step-5-validate-seq',
+    phase: 'review',
+    title: 'Validasi Rangkaian Antar Frame (Cross-Frame Consistency)',
+    description: 'Memverifikasi konsistensi volume pixel, kesamaan garis tanah (footY), stabilitas pusat massa (cx), dan batas warna',
+    timestamp: new Date().toLocaleTimeString('id-ID'),
+    durationMs: 0,
+    status: 'running'
+  });
+
+  const activeAnimKey = detectedAnimations[0] || 'idle';
+  const framesToValidate = (generated.animations[activeAnimKey] || generated.animations.idle || generated.frames).map(
+    (f) => f.pixels
+  );
+  const sequenceValidation = validateSequence(framesToValidate, resolution, {
+    maxColors: 18,
+    maxCountDelta: 0.45,
+    maxFootDrift: 1,
+    maxCenterDrift: 0.25
+  });
+
+  await delay(160);
+  emitStep({
+    id: 'step-5-validate-seq',
+    phase: 'review',
+    title: sequenceValidation.ok ? 'Validasi Antar Frame Lolos (100% Konsisten)' : 'Validasi Antar Frame Diperiksa',
+    description: sequenceValidation.ok
+      ? 'Karakter stabil di semua frame: kaki menapak garis tanah yang sama, volume pixel konsisten, siluet tidak jitter.'
+      : `Catatan konsistensi: ${sequenceValidation.errors.slice(0, 2).join('; ')}`,
+    timestamp: new Date().toLocaleTimeString('id-ID'),
+    durationMs: Date.now() - step5Start,
+    status: sequenceValidation.ok ? 'success' : 'warning',
+    details: { validation: sequenceValidation }
+  });
+
+  // STEP 6: AI Vision Review & Evaluation
+  const step6Start = Date.now();
+  emitStep({
+    id: 'step-6-review',
     phase: 'review',
     title: 'Inspeksi & Evaluasi AI (Vision Self-Critique)',
     description: 'AI menganalisis kepatuhan prompt visual, grading warna, dan kebersihan siluet',
@@ -264,27 +339,27 @@ export async function executeSpriteGeneration(
         }
       }
     } catch {
-      // fallback loaded
+      // fallback
     }
   }
 
-  await delay(220);
+  await delay(180);
   emitStep({
-    id: 'step-5-review',
+    id: 'step-6-review',
     phase: 'review',
     title: 'Evaluasi AI Selesai',
     description: `Kepatuhan: ${evaluation.adherenceScore}%, Siluet: ${evaluation.silhouetteScore}%, Harmoni Warna: ${evaluation.paletteHarmonyScore}%`,
     timestamp: new Date().toLocaleTimeString('id-ID'),
-    durationMs: Date.now() - step5Start,
+    durationMs: Date.now() - step6Start,
     status: evaluation.overallQuality === 'needs_refinement' ? 'warning' : 'success',
     details: { evaluation }
   });
 
-  // STEP 6: Auto-Refinement (if enabled)
+  // STEP 7: Auto-Refinement (if enabled)
   if (autoRefine || evaluation.overallQuality === 'needs_refinement') {
-    const step6Start = Date.now();
+    const step7Start = Date.now();
     emitStep({
-      id: 'step-6-refine',
+      id: 'step-7-refine',
       phase: 'refine',
       title: 'Pembersihan & Penyempurnaan AI Otomatis',
       description: 'Menghilangkan orphan pixel dan meningkatkan specular glint pada kontur',
@@ -294,56 +369,55 @@ export async function executeSpriteGeneration(
     });
 
     currentPixels = applyAutoRefinement(currentPixels, palette);
-    await delay(160);
+    await delay(120);
 
-    emitStep({
-      id: 'step-6-refine',
-      phase: 'refine',
-      title: 'Penyempurnaan Selesai',
-      description: 'Orphan pixel dibersihkan, specular glint kontur atas terdefinisi tajam',
-      timestamp: new Date().toLocaleTimeString('id-ID'),
-      durationMs: Date.now() - step6Start,
-      status: 'success',
-      intermediatePreview: currentPixels
-    }, { currentPixels });
+    emitStep(
+      {
+        id: 'step-7-refine',
+        phase: 'refine',
+        title: 'Penyempurnaan Selesai',
+        description: 'Orphan pixel dibersihkan, specular glint kontur atas terdefinisi tajam',
+        timestamp: new Date().toLocaleTimeString('id-ID'),
+        durationMs: Date.now() - step7Start,
+        status: 'success',
+        intermediatePreview: currentPixels
+      },
+      { currentPixels }
+    );
   }
 
-  // STEP 7: Frame Synthesis & Animation Assembly
-  const step7Start = Date.now();
+  // STEP 8: Final Export Assembly
+  const step8Start = Date.now();
   const animDesc = isAnimated
-    ? `Menyusun frame animasi yang diminta: [${detectedAnimations.join(', ')}]`
-    : `Menyimpan frame karakter statis tunggal (animasi tidak diminta)`;
+    ? `Menyusun frame animasi cel yang diminta: [${detectedAnimations.join(', ')}]`
+    : `Menyimpan frame karakter statis tunggal`;
 
   emitStep({
-    id: 'step-7-export',
+    id: 'step-8-export',
     phase: 'export',
-    title: isAnimated ? 'Sintesis Frame Animasi Selesai' : 'Sintesis Karakter Statis Selesai',
+    title: isAnimated ? 'Sintesis Frame Animasi Selesai' : 'Sintesis Karakter Selesai',
     description: animDesc,
     timestamp: new Date().toLocaleTimeString('id-ID'),
     durationMs: 0,
     status: 'running'
   });
 
-  await delay(120);
+  await delay(100);
   emitStep({
-    id: 'step-7-export',
+    id: 'step-8-export',
     phase: 'export',
     title: 'Karakter Siap Digunakan',
-    description: `Total durasi proses: ${Date.now() - startTime}ms. Siap digunakan di canvas studio.`,
+    description: `Total durasi proses: ${Date.now() - startTime}ms. Karakter "${resolvedSpec.name}" siap digunakan.`,
     timestamp: new Date().toLocaleTimeString('id-ID'),
-    durationMs: Date.now() - step7Start,
+    durationMs: Date.now() - step8Start,
     status: 'success'
   });
-
-  const words = prompt.trim().split(/\s+/);
-  const characterName = words.slice(0, 3).join(' ') || 'Karakter Pixel';
-  const capitalizedName = characterName.charAt(0).toUpperCase() + characterName.slice(1);
 
   const activeKey = generated.detectedAnimations[0] || 'idle';
 
   return {
     id: `sprite-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-    name: capitalizedName,
+    name: resolvedSpec.name || 'Karakter Pixel',
     prompt,
     resolution,
     paletteName,
@@ -363,6 +437,7 @@ export async function executeSpriteGeneration(
     pipelineLogs: logs,
     providerUsed: providerConfig.name,
     modelUsed: providerConfig.model,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    spec: resolvedSpec
   };
 }

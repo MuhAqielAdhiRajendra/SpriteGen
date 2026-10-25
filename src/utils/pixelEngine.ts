@@ -6,6 +6,24 @@ import {
   ColorGradingMode,
   SpriteFrame
 } from '../types/sprite';
+import {
+  CharacterSpec,
+  Pose,
+  POSES,
+  getPose,
+  tweenPose,
+  Grid,
+  buildPalette,
+  postProcessFrame,
+  alignToGround,
+  addOutline,
+  removeOrphans,
+  upscaleNearest,
+  validateSequence,
+  DEFAULT_SPEC
+} from './pixelforgeSpec';
+
+export * from './pixelforgeSpec';
 
 export interface PalettePreset {
   id: string;
@@ -156,14 +174,41 @@ export function colorDistance(hexA: string, hexB: string): number {
 }
 
 /**
- * Quantize any arbitrary color to the closest color in a specified palette
+ * Overloaded quantizeToPalette:
+ * Can quantize a single hex string, or an entire 2D Grid!
  */
-export function quantizeToPalette(color: string, palette: string[]): string {
-  if (color === 'transparent' || !palette.length) return color;
+export function quantizeToPalette(target: string, palette: string[]): string;
+export function quantizeToPalette(target: string[][], palette: string[]): string[][];
+export function quantizeToPalette(target: string | string[][], palette: string[]): string | string[][] {
+  if (Array.isArray(target)) {
+    // 2D Grid quantize
+    const cache = new Map<string, string>();
+    return target.map(row =>
+      row.map(c => {
+        if (c === 'transparent' || !c) return 'transparent';
+        const hit = cache.get(c);
+        if (hit) return hit;
+        let closest = palette[0] || '#ffffff';
+        let minDistance = Infinity;
+        for (const p of palette) {
+          const d = colorDistance(c, p);
+          if (d < minDistance) {
+            minDistance = d;
+            closest = p;
+          }
+        }
+        cache.set(c, closest);
+        return closest;
+      })
+    );
+  }
+
+  // Single color string quantize
+  if (target === 'transparent' || !palette.length) return target;
   let closest = palette[0];
   let minDistance = Infinity;
   for (const palColor of palette) {
-    const dist = colorDistance(color, palColor);
+    const dist = colorDistance(target, palColor);
     if (dist < minDistance) {
       minDistance = dist;
       closest = palColor;
@@ -204,7 +249,7 @@ export function applyColorGrading(palette: string[], mode: ColorGradingMode = 'v
 }
 
 /**
- * Detects whether the user explicitly requested animations in their prompt or options
+ * Detects whether user explicitly requested animations
  */
 export function detectRequestedAnimations(prompt: string, explicit?: AnimationType[]): AnimationType[] {
   if (explicit && explicit.length > 0) {
@@ -246,116 +291,172 @@ export function detectRequestedAnimations(prompt: string, explicit?: AnimationTy
 }
 
 /**
- * Analyzes visual prompt for semantic attributes
+ * Offline / Procedural prompt parser that outputs a validated CharacterSpec
  */
-export function analyzePromptSemantics(prompt: string) {
+export function specFromPromptProcedural(prompt: string): CharacterSpec {
   const p = prompt.toLowerCase();
-  
-  const hasHeavyArmor = p.includes('armor') || p.includes('zirah') || p.includes('besi') || p.includes('plate') || p.includes('perak') || p.includes('knight');
-  const hasRobeOrCoat = p.includes('jubah') || p.includes('robe') || p.includes('coat') || p.includes('mantel') || p.includes('penyihir') || p.includes('tudung');
-  const hasCyberSuit = p.includes('cyber') || p.includes('neon') || p.includes('sci-fi') || p.includes('robot') || p.includes('mecha') || p.includes('futuristik');
 
-  const hasCape = p.includes('cape') || p.includes('jubah belakang') || p.includes('cloak') || hasRobeOrCoat;
-  const hasShield = p.includes('shield') || p.includes('tameng') || p.includes('perisai');
-  const hasSword = p.includes('pedang') || p.includes('blade') || p.includes('katana') || p.includes('sword') || p.includes('claymore') || p.includes('belati');
-  const hasStaff = p.includes('tongkat') || p.includes('staff') || p.includes('wand') || p.includes('kristal');
-  const hasBow = p.includes('panah') || p.includes('busur') || p.includes('bow');
-  const hasGun = p.includes('pistol') || p.includes('senapan') || p.includes('blaster') || p.includes('meriam') || p.includes('gun');
-  
-  const hasGlowingEyes = p.includes('glow') || p.includes('bersinar') || p.includes('laser') || p.includes('menyala') || hasCyberSuit;
-  const hasHatOrHelmet = p.includes('helmet') || p.includes('helm') || p.includes('hat') || p.includes('topi') || p.includes('tudung') || p.includes('hood') || hasHeavyArmor;
-  const hasWings = p.includes('wing') || p.includes('sayap') || p.includes('angel') || p.includes('demon');
+  // Archetype
+  let archetype: CharacterSpec['archetype'] = 'fighter';
+  if (p.includes('archer') || p.includes('panah') || p.includes('bow') || p.includes('ranger') || p.includes('pemburu')) {
+    archetype = 'archer';
+  } else if (p.includes('mage') || p.includes('penyihir') || p.includes('wizard') || p.includes('sorcerer') || p.includes('sihir') || p.includes('staff') || p.includes('tongkat')) {
+    archetype = 'mage';
+  } else if (p.includes('goblin') || p.includes('orc') || p.includes('monster hijau')) {
+    archetype = 'goblin';
+  } else if (p.includes('zombie') || p.includes('mayat') || p.includes('undead') || p.includes('tengkorak') || p.includes('ghoul')) {
+    archetype = 'zombie';
+  } else if (p.includes('npc') || p.includes('warga') || p.includes('penduduk') || p.includes('pedagang') || p.includes('rakyat')) {
+    archetype = 'npc';
+  }
 
-  let primaryTone = 'blue';
-  if (p.includes('merah') || p.includes('red') || p.includes('crimson') || p.includes('ruby')) primaryTone = 'red';
-  else if (p.includes('hijau') || p.includes('green') || p.includes('emerald') || p.includes('forest')) primaryTone = 'green';
-  else if (p.includes('kuning') || p.includes('yellow') || p.includes('gold') || p.includes('emas')) primaryTone = 'gold';
-  else if (p.includes('ungu') || p.includes('purple') || p.includes('violet') || p.includes('magenta')) primaryTone = 'purple';
-  else if (p.includes('hitam') || p.includes('black') || p.includes('dark') || p.includes('obsidian')) primaryTone = 'dark';
-  else if (p.includes('putih') || p.includes('white') || p.includes('silver') || p.includes('perak')) primaryTone = 'silver';
-  else if (p.includes('cyan') || p.includes('biru muda') || p.includes('teal') || p.includes('aqua')) primaryTone = 'cyan';
+  // Body
+  let body: CharacterSpec['body'] = 'normal';
+  if (p.includes('heavy') || p.includes('tebal') || p.includes('kekar') || p.includes('besar') || p.includes('raksasa') || p.includes('tank') || p.includes('plate') || p.includes('zirah tebal')) {
+    body = 'heavy';
+  } else if (archetype === 'archer' || archetype === 'mage' || archetype === 'goblin' || p.includes('slim') || p.includes('ramping') || p.includes('lincah') || p.includes('ninja') || p.includes('kecil')) {
+    body = 'slim';
+  }
+
+  // Head
+  let head: CharacterSpec['head'] = 'bare';
+  if (p.includes('tanduk') || p.includes('horned') || p.includes('demon') || p.includes('iblis')) {
+    head = 'horned';
+  } else if (p.includes('helm tertutup') || p.includes('full helm') || p.includes('visor') || (body === 'heavy' && !p.includes('hood'))) {
+    head = 'helmet_closed';
+  } else if (p.includes('helm') || p.includes('helmet')) {
+    head = 'helmet_open';
+  } else if (p.includes('hood') || p.includes('tudung') || p.includes('jubah kepala') || archetype === 'mage') {
+    head = 'hood';
+  }
+
+  // Weapon
+  let weapon: CharacterSpec['weapon'] = 'sword';
+  if (archetype === 'archer' || p.includes('bow') || p.includes('panah') || p.includes('busur')) {
+    weapon = 'bow';
+  } else if (archetype === 'mage' || p.includes('staff') || p.includes('tongkat') || p.includes('wand')) {
+    weapon = 'staff';
+  } else if (p.includes('axe') || p.includes('kapak')) {
+    weapon = 'axe';
+  } else if (archetype === 'goblin' || p.includes('belati') || p.includes('dagger') || p.includes('pisau')) {
+    weapon = 'dagger';
+  } else if (p.includes('tanpa senjata') || p.includes('tangan kosong') || p.includes('none')) {
+    weapon = 'none';
+  }
+
+  // Offhand
+  let offhand: CharacterSpec['offhand'] = 'none';
+  if (p.includes('shield') || p.includes('perisai') || p.includes('tameng') || (archetype === 'fighter' && weapon === 'sword' && !p.includes('dua tangan'))) {
+    offhand = 'shield';
+  }
+
+  // Cape
+  let cape: CharacterSpec['cape'] = 'none';
+  if (p.includes('jubah panjang') || p.includes('long cape') || p.includes('cloak') || (archetype === 'mage' && !p.includes('tanpa jubah'))) {
+    cape = 'long';
+  } else if (p.includes('jubah') || p.includes('cape') || p.includes('mantel')) {
+    cape = 'short';
+  }
+
+  // Palette
+  let skin = '#f2c9a0';
+  let hair = '#4a3728';
+  let primary = '#3b6fd8';
+  let secondary = '#1e3a8a';
+  let accent = '#f59e0b';
+  let metal = '#cbd5e1';
+
+  if (archetype === 'goblin') {
+    skin = '#65a30d';
+    hair = '#1c1917';
+    primary = '#854d0e';
+    secondary = '#533107';
+    accent = '#eab308';
+    metal = '#94a3b8';
+  } else if (archetype === 'zombie') {
+    skin = '#86efac';
+    hair = '#334155';
+    primary = '#475569';
+    secondary = '#1e293b';
+    accent = '#ef4444';
+    metal = '#64748b';
+  }
+
+  if (p.includes('merah') || p.includes('red') || p.includes('crimson')) {
+    primary = '#dc2626';
+    secondary = '#7f1d1d';
+    accent = '#fbbf24';
+  } else if (p.includes('emas') || p.includes('gold') || p.includes('kuning')) {
+    primary = '#d97706';
+    secondary = '#78350f';
+    accent = '#fef08a';
+    metal = '#facc15';
+  } else if (p.includes('hijau') || p.includes('green') || p.includes('emerald')) {
+    primary = '#16a34a';
+    secondary = '#14532d';
+    accent = '#facc15';
+  } else if (p.includes('ungu') || p.includes('purple') || p.includes('violet')) {
+    primary = '#9333ea';
+    secondary = '#581c87';
+    accent = '#38bdf8';
+  } else if (p.includes('cyan') || p.includes('biru muda') || p.includes('aqua')) {
+    primary = '#0284c7';
+    secondary = '#0c4a6e';
+    accent = '#a5f3fc';
+  } else if (p.includes('hitam') || p.includes('black') || p.includes('dark')) {
+    primary = '#1e293b';
+    secondary = '#0f172a';
+    accent = '#f43f5e';
+    metal = '#94a3b8';
+  } else if (p.includes('putih') || p.includes('perak') || p.includes('silver')) {
+    primary = '#64748b';
+    secondary = '#334155';
+    accent = '#38bdf8';
+    metal = '#e2e8f0';
+  }
+
+  const nameWords = prompt.trim().split(/\s+/).slice(0, 3).join(' ');
+  const name = nameWords.length > 0 ? nameWords.slice(0, 24) : 'Petualang';
 
   return {
-    hasHeavyArmor,
-    hasRobeOrCoat,
-    hasCyberSuit,
-    hasCape,
-    hasShield,
-    hasSword,
-    hasStaff,
-    hasBow,
-    hasGun,
-    hasGlowingEyes,
-    hasHatOrHelmet,
-    hasWings,
-    primaryTone
+    name,
+    archetype,
+    body,
+    head,
+    weapon,
+    offhand,
+    cape,
+    palette: { skin, hair, primary, secondary, accent, metal },
+    animations: ['idle', 'walk', 'attack']
   };
 }
 
 /**
- * Color Kit for cel pixel drawing
- */
-interface ColorKit {
-  primaryColor: string;
-  secondaryColor: string;
-  accentColor: string;
-  outlineColor: string;
-  highlightColor: string;
-  skinTone: string;
-}
-
-function resolveColorKit(pal: string[], primaryTone: string): ColorKit {
-  const outlineColor = pal[0];
-  const midTone = pal[Math.floor(pal.length / 2)] || '#38bdf8';
-  const lightTone = pal[Math.min(pal.length - 2, 7)] || '#fef08a';
-  const highlightColor = pal[pal.length - 1] || '#ffffff';
-  const skinTone = pal[13] || '#fed7aa';
-
-  let primaryColor = midTone;
-  let secondaryColor = lightTone;
-  let accentColor = highlightColor;
-
-  if (primaryTone === 'red') {
-    primaryColor = pal[4] || '#f43f5e';
-    secondaryColor = pal[5] || '#fb7185';
-  } else if (primaryTone === 'gold') {
-    primaryColor = pal[6] || '#fbbf24';
-    secondaryColor = pal[7] || '#fef08a';
-  } else if (primaryTone === 'green') {
-    primaryColor = pal[10] || '#059669';
-    secondaryColor = pal[11] || '#34d399';
-  } else if (primaryTone === 'purple') {
-    primaryColor = pal[12] || '#7c3aed';
-    secondaryColor = pal[13] || '#c084fc';
-  } else if (primaryTone === 'cyan') {
-    primaryColor = pal[8] || '#0284c7';
-    secondaryColor = pal[9] || '#38bdf8';
-  } else if (primaryTone === 'silver') {
-    primaryColor = pal[3] || '#475569';
-    secondaryColor = pal[14] || '#f8fafc';
-  } else if (primaryTone === 'dark') {
-    primaryColor = pal[1] || '#1e293b';
-    secondaryColor = pal[2] || '#334155';
-  }
-
-  return { primaryColor, secondaryColor, accentColor, outlineColor, highlightColor, skinTone };
-}
-
-/**
- * Draws a complete, standalone CEL FRAME of pixel art onto a blank grid.
- * NOTE: Strict compliance with Rule #3:
+ * Draws a complete standalone CEL FRAME of pixel art onto a blank grid.
+ * Strict compliance with Rule #3:
  * - NO CSS transforms, NO bone rotations, NO tweening.
  * - Every cel is drawn with discrete pixel coordinates corresponding to its unique posture!
  */
 export function drawCharacterCel(
-  size: number,
-  colors: ColorKit,
-  analysis: ReturnType<typeof analyzePromptSemantics>,
-  pose: {
-    type: 'idle' | 'walk' | 'attack' | 'hurt';
-    step: number;
+  specOrSize: CharacterSpec | number,
+  poseOrColors: any,
+  sizeOrAnalysis?: any,
+  legacyPose?: any
+): any {
+  if (typeof specOrSize === 'object' && 'archetype' in specOrSize) {
+    // New signature: drawCharacterCel(spec, pose, size) -> { body, fx }
+    const spec = specOrSize as CharacterSpec;
+    const pose = poseOrColors as Pose;
+    const size = typeof sizeOrAnalysis === 'number' ? sizeOrAnalysis : 32;
+    return drawCharacterCelFromSpec(spec, pose, size);
   }
-): string[][] {
+
+  // Legacy signature: drawCharacterCel(size, colors, analysis, pose) -> string[][]
+  const size = specOrSize as number;
+  const colors = poseOrColors;
+  const analysis = sizeOrAnalysis;
+  const pose = legacyPose;
+
   const grid = createEmptyGrid(size);
   const scale = size / 32;
   const cx = Math.floor(size / 2);
@@ -363,7 +464,7 @@ export function drawCharacterCel(
   const setPixel = (x: number, y: number, color: string) => {
     const ix = Math.floor(x);
     const iy = Math.floor(y);
-    if (iy >= 0 && iy < size && ix >= 0 && ix < size) {
+    if (iy >= 0 && iy < size && ix >= 0 && ix < size && color !== 'transparent') {
       grid[iy][ix] = color;
     }
   };
@@ -376,15 +477,12 @@ export function drawCharacterCel(
     }
   };
 
-  // Base anatomical proportions
   const headRadius = Math.round(4.5 * scale);
   let headCenterY = Math.round(9 * scale);
-  let torsoHeight = Math.round(9 * scale);
-  let torsoWidth = Math.round(11 * scale);
+  const torsoHeight = Math.round(8 * scale);
+  const torsoWidth = Math.round(9 * scale);
   let torsoXOffset = 0;
   let torsoYOffset = 0;
-
-  // Modulate pose anatomy depending on the exact animation step (cel)
   let legLeftOffset = 0;
   let legRightOffset = 0;
   let legLeftLift = 0;
@@ -392,79 +490,33 @@ export function drawCharacterCel(
   let armLeftAngle = 0;
   let armRightAngle = 0;
   let slashArc = false;
-  let impactFlash = false;
 
   if (pose.type === 'walk') {
     if (pose.step === 0) {
-      // Step 0: Contact Pose - Left foot forward, right foot trailing back
-      legLeftOffset = -Math.round(3.5 * scale);
-      legRightOffset = Math.round(3.5 * scale);
+      legLeftOffset = -Math.round(3 * scale);
+      legRightOffset = Math.round(3 * scale);
       armLeftAngle = Math.round(2 * scale);
       armRightAngle = -Math.round(2 * scale);
     } else if (pose.step === 1) {
-      // Step 1: Passing Pose - Left leg planted straight, right leg bent passing, body rises 1px
       torsoYOffset = -Math.round(1 * scale);
-      legLeftOffset = 0;
-      legRightOffset = Math.round(1 * scale);
-      legRightLift = Math.round(2 * scale); // Right foot lifted off ground
-      armLeftAngle = 0;
-      armRightAngle = 0;
+      legRightLift = Math.round(2 * scale);
     } else if (pose.step === 2) {
-      // Step 2: Contact Pose - Right foot forward, left foot trailing back
-      legLeftOffset = Math.round(3.5 * scale);
-      legRightOffset = -Math.round(3.5 * scale);
+      legLeftOffset = Math.round(3 * scale);
+      legRightOffset = -Math.round(3 * scale);
       armLeftAngle = -Math.round(2 * scale);
       armRightAngle = Math.round(2 * scale);
     } else if (pose.step === 3) {
-      // Step 3: Passing Pose - Right leg planted straight, left leg bent passing, body rises 1px
       torsoYOffset = -Math.round(1 * scale);
-      legLeftOffset = -Math.round(1 * scale);
-      legLeftLift = Math.round(2 * scale); // Left foot lifted off ground
-      legRightOffset = 0;
-      armLeftAngle = 0;
-      armRightAngle = 0;
+      legLeftLift = Math.round(2 * scale);
     }
   } else if (pose.type === 'attack') {
     if (pose.step === 0) {
-      // Step 0: Anticipation / Wind-up - Crouched low, weapon pulled back behind shoulder
-      torsoYOffset = Math.round(1 * scale);
       torsoXOffset = -Math.round(2 * scale);
-      armRightAngle = -Math.round(4 * scale); // Weapon pulled back
-      legLeftOffset = -Math.round(2 * scale);
-      legRightOffset = Math.round(2 * scale);
+      armRightAngle = -Math.round(4 * scale);
     } else if (pose.step === 1) {
-      // Step 1: Strike / Slash - Full forward lunge, wide glowing blade arc
       torsoXOffset = Math.round(3 * scale);
-      armRightAngle = Math.round(4 * scale); // Weapon extended forward
+      armRightAngle = Math.round(4 * scale);
       slashArc = true;
-      legLeftOffset = -Math.round(4 * scale);
-      legRightOffset = Math.round(4 * scale);
-    } else if (pose.step === 2) {
-      // Step 2: Follow-through / Recovery - Blade lowered, stance settling
-      torsoXOffset = Math.round(1 * scale);
-      armRightAngle = Math.round(1 * scale);
-      legLeftOffset = -Math.round(2 * scale);
-      legRightOffset = Math.round(2 * scale);
-    }
-  } else if (pose.type === 'hurt') {
-    if (pose.step === 0) {
-      // Step 0: Impact - Recoiling backwards, flash tint
-      torsoXOffset = -Math.round(3 * scale);
-      torsoYOffset = -Math.round(1 * scale);
-      armLeftAngle = -Math.round(3 * scale);
-      armRightAngle = Math.round(3 * scale);
-      impactFlash = true;
-    } else if (pose.step === 1) {
-      // Step 1: Stagger recovery - Low crouch
-      torsoXOffset = -Math.round(1 * scale);
-      torsoYOffset = Math.round(1 * scale);
-      legLeftOffset = -Math.round(3 * scale);
-      legRightOffset = Math.round(2 * scale);
-    }
-  } else if (pose.type === 'idle') {
-    if (pose.step === 1) {
-      // Breathing inhale: chest rises 1px
-      torsoYOffset = -Math.round(1 * scale);
     }
   }
 
@@ -473,191 +525,382 @@ export function drawCharacterCel(
   const hipY = neckY + torsoHeight;
   const groundY = Math.min(size - Math.round(2 * scale), hipY + Math.round(8 * scale));
 
-  const bodyPrimary = impactFlash ? (colors.accentColor) : colors.primaryColor;
-  const bodySecondary = impactFlash ? '#ffffff' : colors.secondaryColor;
+  // Torso
+  drawRect(cx + torsoXOffset - Math.floor(torsoWidth / 2), neckY, torsoWidth, torsoHeight, colors.primaryColor);
 
-  // 1. Cloak / Cape (Drawn behind torso)
-  if (analysis.hasCape) {
-    const capeW = Math.round(14 * scale);
-    const capeH = groundY - neckY;
-    for (let cy = 0; cy < capeH; cy++) {
-      const spread = Math.round((cy / capeH) * 3 * scale);
-      // Cape flares slightly based on movement
-      const capeSway = -torsoXOffset;
-      drawRect(cx + torsoXOffset + capeSway - Math.floor(capeW / 2) - spread, neckY + cy, capeW + spread * 2, 1, colors.primaryColor);
-    }
-  }
+  // Legs
+  const legW = Math.max(2, Math.round(2.5 * scale));
+  const leftLegX = cx + torsoXOffset - legW - 1 + legLeftOffset;
+  const rightLegX = cx + torsoXOffset + 1 + legRightOffset;
+  drawRect(leftLegX, hipY, legW, groundY - legLeftLift - hipY, colors.secondaryColor);
+  drawRect(rightLegX, hipY, legW, groundY - legRightLift - hipY, colors.secondaryColor);
 
-  // 2. Wings (if detected)
-  if (analysis.hasWings) {
-    const wingW = Math.round(8 * scale);
-    const wingH = Math.round(10 * scale);
-    for (let i = 0; i < wingW; i++) {
-      const h = Math.round((wingH * (i + 1)) / wingW);
-      setPixel(cx + torsoXOffset - Math.round(8 * scale) - i, neckY + i - h / 2, colors.accentColor);
-      setPixel(cx + torsoXOffset + Math.round(8 * scale) + i, neckY + i - h / 2, colors.accentColor);
-    }
-  }
-
-  // 3. Legs and Feet (Drawn per cel position)
-  const legW = Math.max(2, Math.round(3 * scale));
-  const legGap = Math.max(1, Math.round(2 * scale));
-  const bootH = Math.round(3 * scale);
-
-  // Left leg
-  const leftLegX = cx + torsoXOffset - legGap - legW + legLeftOffset;
-  const leftLegGround = groundY - legLeftLift;
-  drawRect(leftLegX, hipY, legW, Math.max(1, leftLegGround - hipY), bodyPrimary);
-  drawRect(leftLegX - Math.round(1 * scale), leftLegGround - bootH, legW + Math.round(1 * scale), bootH, colors.outlineColor);
-
-  // Right leg
-  const rightLegX = cx + torsoXOffset + legGap + legRightOffset;
-  const rightLegGround = groundY - legRightLift;
-  drawRect(rightLegX, hipY, legW, Math.max(1, rightLegGround - hipY), bodyPrimary);
-  drawRect(rightLegX, rightLegGround - bootH, legW + Math.round(1 * scale), bootH, colors.outlineColor);
-
-  // 4. Torso / Armor / Clothing
-  drawRect(cx + torsoXOffset - Math.floor(torsoWidth / 2), neckY, torsoWidth, torsoHeight, bodyPrimary);
-  // Chestplate / Robe Detail
-  const chestW = Math.round(torsoWidth * 0.65);
-  const chestH = Math.round(torsoHeight * 0.6);
-  drawRect(cx + torsoXOffset - Math.floor(chestW / 2), neckY + Math.round(1 * scale), chestW, chestH, bodySecondary);
-  // Belt
-  const beltY = hipY - Math.round(2 * scale);
-  drawRect(cx + torsoXOffset - Math.floor(torsoWidth / 2), beltY, torsoWidth, Math.max(1, Math.round(1.5 * scale)), colors.outlineColor);
-  setPixel(cx + torsoXOffset, beltY, colors.accentColor);
-
-  // 5. Arms and Hands (Cel-drawn angles)
-  const armW = Math.max(2, Math.round(2.5 * scale));
-  const armH = Math.round(7 * scale);
-
-  // Left arm
-  const armLY = neckY + Math.round(1 * scale);
-  const armLX = cx + torsoXOffset - Math.floor(torsoWidth / 2) - armW;
-  drawRect(armLX, armLY + armLeftAngle, armW, armH, bodyPrimary);
-  drawRect(armLX, armLY + armLeftAngle + armH, armW, Math.round(2 * scale), bodySecondary); // Left hand
-
-  // Right arm (Weapon hand)
-  const armRY = neckY + Math.round(1 * scale);
-  const armRX = cx + torsoXOffset + Math.floor(torsoWidth / 2);
-  drawRect(armRX, armRY + armRightAngle, armW, armH, bodyPrimary);
-  drawRect(armRX, armRY + armRightAngle + armH, armW, Math.round(2 * scale), bodySecondary); // Right hand
-
-  // 6. Weapons & Equipment
-  const weaponHandX = armRX + Math.floor(armW / 2);
-  const weaponHandY = armRY + armRightAngle + armH;
-
-  if (analysis.hasSword || (!analysis.hasStaff && !analysis.hasBow && !analysis.hasGun)) {
-    // Sword blade
-    const swordBladeH = Math.round(12 * scale);
-    if (pose.type === 'attack' && pose.step === 1) {
-      // Horizontal thrust/slash angle
-      drawRect(weaponHandX, weaponHandY - Math.round(2 * scale), swordBladeH, Math.max(1, Math.round(1.5 * scale)), colors.highlightColor);
-      drawRect(weaponHandX - Math.round(1 * scale), weaponHandY - Math.round(4 * scale), Math.max(1, Math.round(1.5 * scale)), Math.round(5 * scale), colors.outlineColor);
-    } else {
-      // Vertical blade
-      drawRect(weaponHandX, weaponHandY - swordBladeH, Math.max(1, Math.round(1.5 * scale)), swordBladeH, colors.secondaryColor);
-      setPixel(weaponHandX, weaponHandY - swordBladeH - 1, colors.highlightColor);
-      drawRect(weaponHandX - Math.round(1 * scale), weaponHandY - Math.round(3 * scale), Math.round(3 * scale), Math.max(1, Math.round(1 * scale)), colors.outlineColor);
-    }
-  }
-
-  // Draw bright sword slash arc in cel frame
-  if (slashArc) {
-    const slashW = Math.round(10 * scale);
-    for (let a = 0; a < slashW; a++) {
-      const arcX = cx + torsoXOffset + Math.round(6 * scale) + a;
-      const arcY = neckY - Math.round(3 * scale) + Math.round(Math.sin((a / slashW) * Math.PI) * 5 * scale);
-      if (arcX >= 0 && arcX < size && arcY >= 0 && arcY < size) {
-        setPixel(arcX, arcY, colors.highlightColor);
-        setPixel(arcX, arcY + 1, colors.accentColor);
-      }
-    }
-  }
-
-  if (analysis.hasShield) {
-    const shieldW = Math.round(5 * scale);
-    const shieldH = Math.round(9 * scale);
-    drawRect(armLX - shieldW + Math.round(1 * scale), armLY + armLeftAngle, shieldW, shieldH, bodyPrimary);
-    drawRect(armLX - shieldW + Math.round(2 * scale), armLY + armLeftAngle + Math.round(1 * scale), shieldW - Math.round(2 * scale), shieldH - Math.round(2 * scale), colors.accentColor);
-  } else if (analysis.hasStaff) {
-    const staffH = Math.round(16 * scale);
-    drawRect(armLX - Math.round(1 * scale), armLY - Math.round(6 * scale), Math.max(1, Math.round(1 * scale)), staffH, bodyPrimary);
-    const orbRadius = Math.max(2, Math.round(2.5 * scale));
-    drawRect(armLX - Math.floor(orbRadius / 2), armLY - Math.round(8 * scale), orbRadius, orbRadius, colors.accentColor);
-    setPixel(armLX, armLY - Math.round(8 * scale), colors.highlightColor);
-  }
-
-  // 7. Head & Face
+  // Head
   for (let dy = -headRadius; dy <= headRadius; dy++) {
     for (let dx = -headRadius; dx <= headRadius; dx++) {
       if (dx * dx + dy * dy <= headRadius * headRadius) {
-        setPixel(cx + torsoXOffset + dx, headCenterY + dy, bodySecondary);
+        setPixel(cx + torsoXOffset + dx, headCenterY + dy, colors.secondaryColor);
       }
     }
   }
 
-  // Helmet / Hair
-  if (analysis.hasHatOrHelmet || analysis.hasHeavyArmor) {
-    for (let dy = -headRadius; dy <= 0; dy++) {
-      for (let dx = -headRadius; dx <= headRadius; dx++) {
-        if (dx * dx + dy * dy <= headRadius * headRadius) {
-          setPixel(cx + torsoXOffset + dx, headCenterY + dy, bodyPrimary);
-        }
-      }
-    }
-    const visorY = headCenterY + Math.round(1 * scale);
-    const visorW = Math.round(headRadius * 1.4);
-    drawRect(cx + torsoXOffset - Math.floor(visorW / 2), visorY, visorW, Math.max(1, Math.round(2 * scale)), colors.outlineColor);
-    if (analysis.hasGlowingEyes) {
-      drawRect(cx + torsoXOffset - Math.round(2 * scale), visorY, Math.round(4 * scale), 1, colors.accentColor);
-    }
-  } else {
-    for (let dy = -headRadius; dy <= -Math.round(1 * scale); dy++) {
-      for (let dx = -headRadius; dx <= headRadius; dx++) {
-        if (dx * dx + dy * dy <= headRadius * headRadius) {
-          setPixel(cx + torsoXOffset + dx, headCenterY + dy, bodyPrimary);
-        }
-      }
-    }
-    // Eyes
-    const eyeY = headCenterY + Math.round(1 * scale);
-    const eyeSpacing = Math.max(1, Math.round(2 * scale));
-    setPixel(cx + torsoXOffset - eyeSpacing, eyeY, colors.outlineColor);
-    setPixel(cx + torsoXOffset + eyeSpacing, eyeY, colors.outlineColor);
-    if (scale >= 2) {
-      setPixel(cx + torsoXOffset - eyeSpacing, eyeY - 1, colors.highlightColor);
-      setPixel(cx + torsoXOffset + eyeSpacing, eyeY - 1, colors.highlightColor);
+  // Sword
+  if (analysis?.hasSword !== false) {
+    const swordBladeH = Math.round(10 * scale);
+    const handX = cx + torsoXOffset + Math.floor(torsoWidth / 2) + 2;
+    const handY = neckY + Math.round(2 * scale) + armRightAngle;
+    drawRect(handX, handY - swordBladeH, Math.max(1, Math.round(1.5 * scale)), swordBladeH, colors.highlightColor);
+  }
+
+  if (slashArc) {
+    for (let a = 0; a < 8; a++) {
+      setPixel(cx + torsoXOffset + Math.round(6 * scale) + a, neckY - Math.round(2 * scale) + a, colors.highlightColor);
     }
   }
 
-  // 8. Crisp Cel-Shaded Outline (No Ground Shadow)
-  const outlineGrid = JSON.parse(JSON.stringify(grid)) as string[][];
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if (grid[y][x] !== 'transparent') {
-        const neighbors = [
-          [x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]
-        ];
-        for (const [nx, ny] of neighbors) {
-          if (nx >= 0 && nx < size && ny >= 0 && ny < size) {
-            if (grid[ny][nx] === 'transparent' && outlineGrid[ny][nx] === 'transparent') {
-              if (y < groundY + 1) {
-                outlineGrid[ny][nx] = colors.outlineColor;
-              }
-            }
+  return grid;
+}
+
+/**
+ * Draws discrete pixel components for a CharacterSpec into body grid and fx grid
+ */
+export function drawCharacterCelFromSpec(
+  spec: CharacterSpec,
+  pose: Pose,
+  size: number = 32
+): { body: Grid; fx: Grid | null } {
+  const body = createEmptyGrid(size);
+  const fx = createEmptyGrid(size);
+
+  const pal = buildPalette(spec);
+  const { ramps } = pal;
+
+  const setBodyPixel = (x: number, y: number, color: string) => {
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    if (iy >= 0 && iy < size && ix >= 0 && ix < size && color !== 'transparent') {
+      body[iy][ix] = color;
+    }
+  };
+
+  const drawBodyRect = (x: number, y: number, w: number, h: number, color: string) => {
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        setBodyPixel(x + dx, y + dy, color);
+      }
+    }
+  };
+
+  const setFxPixel = (x: number, y: number, color: string) => {
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    if (iy >= 0 && iy < size && ix >= 0 && ix < size && color !== 'transparent') {
+      fx[iy][ix] = color;
+    }
+  };
+
+  const cx = 16;
+  const groundY = 30;
+
+  // Body proportions based on spec.body
+  let torsoW = 8;
+  let torsoH = 7;
+  let legW = 2;
+  if (spec.body === 'slim') {
+    torsoW = 6;
+    torsoH = 7;
+    legW = 2;
+  } else if (spec.body === 'heavy') {
+    torsoW = 10;
+    torsoH = 8;
+    legW = 3;
+  }
+
+  const torsoX = cx - Math.floor(torsoW / 2);
+  const torsoY = 13 + pose.bodyDy;
+  const hipY = torsoY + torsoH;
+
+  // 1. Cape (Behind body)
+  if (spec.cape !== 'none') {
+    const capeW = torsoW + (spec.cape === 'long' ? 2 : 0);
+    const capeStartY = torsoY + 1;
+    const capeEndY = spec.cape === 'long' ? groundY - 2 : hipY + 1;
+    for (let cy = capeStartY; cy <= capeEndY; cy++) {
+      const progress = (cy - capeStartY) / Math.max(1, capeEndY - capeStartY);
+      const flare = spec.cape === 'long' ? Math.round(progress * 2) : 0;
+      const sway = pose.capeSway * Math.round(progress * 2);
+      const startX = cx - Math.floor(capeW / 2) - flare - sway;
+      const width = capeW + flare * 2;
+      for (let k = 0; k < width; k++) {
+        const color = (k === 0 || k === width - 1) ? ramps.primary.shadow : ramps.primary.base;
+        setBodyPixel(startX + k, cy, color);
+      }
+    }
+  }
+
+  // 2. Back Leg (drawn before torso so torso/front leg overlaps cleanly)
+  const backLegX = cx - Math.floor(torsoW / 2) + pose.legBackX;
+  const backLegGround = groundY - pose.legBackLift;
+  drawBodyRect(backLegX, hipY, legW, Math.max(1, backLegGround - hipY - 2), ramps.secondary.shadow);
+  drawBodyRect(backLegX, backLegGround - 2, legW, 2, ramps.metal.shadow);
+
+  // 3. Back Arm (drawn behind torso)
+  const backShoulderX = torsoX;
+  const backShoulderY = torsoY + 1;
+  const armLen = 5;
+  const backRad = (pose.armBack * Math.PI) / 180;
+  const backHandX = Math.round(backShoulderX + Math.sin(backRad) * armLen);
+  const backHandY = Math.round(backShoulderY + Math.cos(backRad) * armLen);
+
+  for (let s = 0; s <= armLen; s++) {
+    const ax = Math.round(backShoulderX + (backHandX - backShoulderX) * (s / armLen));
+    const ay = Math.round(backShoulderY + (backHandY - backShoulderY) * (s / armLen));
+    setBodyPixel(ax, ay, ramps.primary.shadow);
+  }
+  setBodyPixel(backHandX, backHandY, ramps.skin.shadow);
+
+  // 4. Torso / Armor / Clothing
+  drawBodyRect(torsoX, torsoY, torsoW, torsoH, ramps.primary.base);
+  for (let dy = 0; dy < torsoH; dy++) {
+    setBodyPixel(torsoX, torsoY + dy, ramps.primary.shadow);
+    setBodyPixel(torsoX + torsoW - 1, torsoY + dy, ramps.primary.light);
+  }
+
+  if (spec.archetype === 'fighter') {
+    const plateW = torsoW - 2;
+    drawBodyRect(torsoX + 1, torsoY + 1, plateW, 4, ramps.metal.base);
+    setBodyPixel(cx, torsoY + 2, ramps.accent.base);
+    setBodyPixel(cx, torsoY + 1, ramps.metal.light);
+  } else if (spec.archetype === 'archer') {
+    for (let d = 0; d < Math.min(torsoW, torsoH); d++) {
+      setBodyPixel(torsoX + d, torsoY + d, ramps.secondary.base);
+    }
+  } else if (spec.archetype === 'mage') {
+    drawBodyRect(torsoX, hipY, torsoW, 3, ramps.primary.base);
+    setBodyPixel(cx, torsoY + 1, ramps.accent.base);
+    setBodyPixel(cx, torsoY + 2, ramps.accent.light);
+  } else if (spec.archetype === 'goblin') {
+    drawBodyRect(torsoX, hipY, torsoW, 2, ramps.secondary.base);
+    setBodyPixel(torsoX + 1, hipY + 2, ramps.secondary.base);
+    setBodyPixel(torsoX + torsoW - 2, hipY + 2, ramps.secondary.base);
+  }
+
+  // Belt
+  drawBodyRect(torsoX, hipY - 1, torsoW, 1, ramps.secondary.shadow);
+  setBodyPixel(cx, hipY - 1, ramps.accent.base);
+
+  // 5. Front Leg
+  const frontLegX = cx + 1 + pose.legFrontX;
+  const frontLegGround = groundY - pose.legFrontLift;
+  drawBodyRect(frontLegX, hipY, legW, Math.max(1, frontLegGround - hipY - 2), ramps.secondary.base);
+  drawBodyRect(frontLegX, frontLegGround - 2, legW, 2, ramps.metal.base);
+  setBodyPixel(frontLegX + legW - 1, frontLegGround - 2, ramps.metal.light);
+
+  // 6. Offhand (Shield)
+  if (spec.offhand === 'shield') {
+    const shieldX = cx - 3 + Math.round(pose.capeSway / 2);
+    const shieldY = torsoY + 1;
+    drawBodyRect(shieldX, shieldY, 5, 7, ramps.primary.base);
+    drawBodyRect(shieldX, shieldY, 5, 1, ramps.metal.base);
+    drawBodyRect(shieldX, shieldY + 6, 5, 1, ramps.metal.base);
+    drawBodyRect(shieldX, shieldY, 1, 7, ramps.metal.base);
+    drawBodyRect(shieldX + 4, shieldY, 1, 7, ramps.metal.base);
+    setBodyPixel(shieldX + 2, shieldY + 3, ramps.accent.base);
+    setBodyPixel(shieldX + 2, shieldY + 2, ramps.accent.light);
+  }
+
+  // 7. Head & Face
+  const headX = cx + pose.headDx;
+  const headY = 9 + pose.bodyDy + pose.headDy;
+  const headR = spec.archetype === 'goblin' ? 3 : spec.body === 'heavy' ? 4 : 3.5;
+
+  for (let dy = -Math.floor(headR); dy <= Math.floor(headR); dy++) {
+    for (let dx = -Math.floor(headR); dx <= Math.floor(headR); dx++) {
+      if (dx * dx + dy * dy <= headR * headR + 1) {
+        setBodyPixel(headX + dx, headY + dy, ramps.skin.base);
+      }
+    }
+  }
+
+  setBodyPixel(headX, headY + Math.floor(headR), ramps.skin.shadow);
+  setBodyPixel(headX - 1, headY + Math.floor(headR), ramps.skin.shadow);
+
+  // Headwear
+  if (spec.head === 'bare') {
+    for (let dy = -Math.floor(headR); dy <= 0; dy++) {
+      for (let dx = -Math.floor(headR); dx <= Math.floor(headR); dx++) {
+        if (dx * dx + dy * dy <= headR * headR) {
+          setBodyPixel(headX + dx, headY + dy, ramps.hair.base);
+        }
+      }
+    }
+    setBodyPixel(headX, headY - Math.floor(headR), ramps.hair.light);
+
+    if (spec.archetype === 'goblin') {
+      setBodyPixel(headX - Math.floor(headR) - 1, headY - 1, ramps.skin.base);
+      setBodyPixel(headX - Math.floor(headR) - 2, headY - 2, ramps.skin.shadow);
+      setBodyPixel(headX + Math.floor(headR) + 1, headY - 1, ramps.skin.base);
+      setBodyPixel(headX + Math.floor(headR) + 2, headY - 2, ramps.skin.base);
+    }
+  } else if (spec.head === 'hood') {
+    for (let dy = -Math.floor(headR) - 1; dy <= 1; dy++) {
+      for (let dx = -Math.floor(headR) - 1; dx <= Math.floor(headR) + 1; dx++) {
+        if (dx * dx + dy * dy <= (headR + 1) * (headR + 1)) {
+          if (!(dx >= 0 && dx <= 2 && dy >= -1 && dy <= 1)) {
+            setBodyPixel(headX + dx, headY + dy, ramps.primary.base);
           }
         }
       }
     }
+    setBodyPixel(headX, headY - Math.floor(headR) - 1, ramps.primary.light);
+  } else if (spec.head === 'helmet_open') {
+    for (let dy = -Math.floor(headR); dy <= -1; dy++) {
+      for (let dx = -Math.floor(headR); dx <= Math.floor(headR); dx++) {
+        if (dx * dx + dy * dy <= headR * headR) {
+          setBodyPixel(headX + dx, headY + dy, ramps.metal.base);
+        }
+      }
+    }
+    setBodyPixel(headX, headY - Math.floor(headR), ramps.metal.light);
+    setBodyPixel(headX + 1, headY, ramps.metal.base);
+  } else if (spec.head === 'helmet_closed') {
+    for (let dy = -Math.floor(headR); dy <= Math.floor(headR); dy++) {
+      for (let dx = -Math.floor(headR); dx <= Math.floor(headR); dx++) {
+        if (dx * dx + dy * dy <= headR * headR) {
+          setBodyPixel(headX + dx, headY + dy, ramps.metal.base);
+        }
+      }
+    }
+    for (let dx = -1; dx <= 2; dx++) {
+      setBodyPixel(headX + dx, headY, pal.outline);
+    }
+    setBodyPixel(headX + 1, headY, ramps.accent.light);
+    setBodyPixel(headX, headY - Math.floor(headR), ramps.metal.light);
+  } else if (spec.head === 'horned') {
+    for (let dy = -Math.floor(headR); dy <= 0; dy++) {
+      for (let dx = -Math.floor(headR); dx <= Math.floor(headR); dx++) {
+        if (dx * dx + dy * dy <= headR * headR) {
+          setBodyPixel(headX + dx, headY + dy, ramps.metal.base);
+        }
+      }
+    }
+    setBodyPixel(headX - 3, headY - 3, ramps.accent.base);
+    setBodyPixel(headX - 4, headY - 5, ramps.accent.light);
+    setBodyPixel(headX + 3, headY - 3, ramps.accent.base);
+    setBodyPixel(headX + 4, headY - 5, ramps.accent.light);
   }
 
-  return outlineGrid;
+  // Eyes
+  if (spec.head !== 'helmet_closed') {
+    const eyeX = headX + 1;
+    const eyeY = headY;
+    if (spec.archetype === 'zombie') {
+      setBodyPixel(eyeX, eyeY, ramps.accent.light);
+    } else {
+      setBodyPixel(eyeX, eyeY, pal.outline);
+      setBodyPixel(eyeX + 1, eyeY - 1, pal.highlight);
+    }
+  }
+
+  // 8. Front Arm & Hand
+  const frontShoulderX = torsoX + torsoW - 1;
+  const frontShoulderY = torsoY + 1;
+  const frontRad = (pose.armFront * Math.PI) / 180;
+  const frontHandX = Math.round(frontShoulderX + Math.sin(frontRad) * armLen);
+  const frontHandY = Math.round(frontShoulderY + Math.cos(frontRad) * armLen);
+
+  for (let s = 0; s <= armLen; s++) {
+    const ax = Math.round(frontShoulderX + (frontHandX - frontShoulderX) * (s / armLen));
+    const ay = Math.round(frontShoulderY + (frontHandY - frontShoulderY) * (s / armLen));
+    setBodyPixel(ax, ay, ramps.primary.base);
+  }
+  setBodyPixel(frontHandX, frontHandY, ramps.skin.base);
+
+  // 9. Weapon
+  if (spec.weapon !== 'none') {
+    const wRad = (pose.weaponAngle * Math.PI) / 180;
+    const dirX = Math.cos(wRad);
+    const dirY = Math.sin(wRad);
+
+    if (spec.weapon === 'sword') {
+      const guardPerpX = -dirY;
+      const guardPerpY = dirX;
+      setBodyPixel(frontHandX + guardPerpX, frontHandY + guardPerpY, ramps.accent.base);
+      setBodyPixel(frontHandX - guardPerpX, frontHandY - guardPerpY, ramps.accent.base);
+
+      for (let b = 1; b <= 9; b++) {
+        const bx = Math.round(frontHandX + dirX * b);
+        const by = Math.round(frontHandY + dirY * b);
+        setBodyPixel(bx, by, b === 9 ? pal.highlight : ramps.metal.base);
+      }
+    } else if (spec.weapon === 'axe') {
+      for (let h = 1; h <= 8; h++) {
+        const hx = Math.round(frontHandX + dirX * h);
+        const hy = Math.round(frontHandY + dirY * h);
+        setBodyPixel(hx, hy, ramps.secondary.shadow);
+      }
+      const tipX = Math.round(frontHandX + dirX * 8);
+      const tipY = Math.round(frontHandY + dirY * 8);
+      setBodyPixel(tipX, tipY, ramps.metal.base);
+      setBodyPixel(tipX - 1, tipY - 1, ramps.metal.light);
+      setBodyPixel(tipX, tipY - 2, pal.highlight);
+      setBodyPixel(tipX + 1, tipY - 1, ramps.metal.light);
+    } else if (spec.weapon === 'staff') {
+      for (let s = -6; s <= 9; s++) {
+        const sx = Math.round(frontHandX + dirX * s);
+        const sy = Math.round(frontHandY + dirY * s);
+        setBodyPixel(sx, sy, ramps.secondary.shadow);
+      }
+      const topX = Math.round(frontHandX + dirX * 9);
+      const topY = Math.round(frontHandY + dirY * 9);
+      setBodyPixel(topX, topY, ramps.accent.base);
+      setBodyPixel(topX, topY - 1, ramps.accent.light);
+      setBodyPixel(topX + 1, topY, pal.highlight);
+    } else if (spec.weapon === 'bow') {
+      for (let a = -4; a <= 4; a++) {
+        const curveX = Math.round(frontHandX + dirX * 2 + Math.abs(a) * 0.5);
+        const curveY = Math.round(frontHandY + a);
+        setBodyPixel(curveX, curveY, ramps.secondary.base);
+        setBodyPixel(frontHandX - 1, curveY, ramps.secondary.light);
+      }
+    } else if (spec.weapon === 'dagger') {
+      for (let d = 1; d <= 4; d++) {
+        const dx = Math.round(frontHandX + dirX * d);
+        const dy = Math.round(frontHandY + dirY * d);
+        setBodyPixel(dx, dy, d === 4 ? pal.highlight : ramps.metal.light);
+      }
+    }
+  }
+
+  // 10. Slash FX
+  if (pose.slashFx > 0) {
+    if (pose.slashFx === 1) {
+      setFxPixel(frontHandX + 4, frontHandY - 4, ramps.accent.light);
+      setFxPixel(frontHandX + 5, frontHandY - 5, pal.highlight);
+    } else if (pose.slashFx === 2) {
+      const arcPoints = 12;
+      for (let p = 0; p < arcPoints; p++) {
+        const t = p / (arcPoints - 1);
+        const angle = -Math.PI * 0.4 + t * Math.PI * 0.8;
+        const radius = 10;
+        const ax = Math.round(frontHandX + Math.cos(angle) * radius);
+        const ay = Math.round(frontHandY + Math.sin(angle) * radius);
+        setFxPixel(ax, ay, pal.highlight);
+        setFxPixel(ax - 1, ay, ramps.accent.light);
+        setFxPixel(ax, ay + 1, ramps.accent.base);
+      }
+    } else if (pose.slashFx === 3) {
+      setFxPixel(frontHandX + 7, frontHandY + 2, ramps.accent.light);
+      setFxPixel(frontHandX + 9, frontHandY + 4, ramps.accent.base);
+    }
+  }
+
+  return { body, fx };
 }
 
 /**
  * Procedural Pixel Art Generator that scales accurately for 32x32, 64x64, 128x128.
- * Produces discrete Cel Frames without ground shadow.
+ * Produces discrete Cel Frames without ground shadow using the CharacterSpec.
  */
 export function generateProceduralCharacter(params: {
   prompt: string;
@@ -666,6 +909,7 @@ export function generateProceduralCharacter(params: {
   colorGrading?: ColorGradingMode;
   direction?: CharacterDirection;
   requestedAnimations?: AnimationType[];
+  spec?: CharacterSpec;
 }): {
   pixels: string[][];
   palette: string[];
@@ -674,101 +918,117 @@ export function generateProceduralCharacter(params: {
   features: string[];
   isAnimated: boolean;
   detectedAnimations: AnimationType[];
+  spec: CharacterSpec;
 } {
   const {
     prompt,
     resolution,
-    paletteKey = 'vibrant_rpg',
-    colorGrading = 'vibrant',
-    direction = 'front',
-    requestedAnimations: explicitAnimations
+    requestedAnimations: explicitAnimations,
+    spec: inputSpec
   } = params;
 
-  const paletteObj = PALETTES[paletteKey] || PALETTES.vibrant_rpg;
-  const rawPal = paletteObj.colors;
-  const pal = applyColorGrading(rawPal, colorGrading);
-  const size = resolution;
+  // 1. Resolve Spec (either from input or procedural analysis)
+  const spec: CharacterSpec = inputSpec || specFromPromptProcedural(prompt);
 
-  const analysis = analyzePromptSemantics(prompt);
-  const detectedAnimations = detectRequestedAnimations(prompt, explicitAnimations);
-  const isAnimated = detectedAnimations.length > 0;
-  const colors = resolveColorKit(pal, analysis.primaryTone);
-
-  // Generate Base Standing Frame (Frame 1)
-  const basePixels = drawCharacterCel(size, colors, analysis, { type: 'idle', step: 0 });
-
-  const detectedFeatures: string[] = [
-    `Arah: ${direction}`,
-    `Nuansa Warna: ${analysis.primaryTone.toUpperCase()}`,
-    isAnimated ? `Animasi Frame-by-Frame: [${detectedAnimations.join(', ')}]` : 'Mode Karakter Statis (1 Frame Cel)'
+  // 2. Build Palette & Ramps
+  const palObj = buildPalette(spec);
+  const palette = [
+    palObj.outline,
+    spec.palette.primary,
+    spec.palette.secondary,
+    spec.palette.accent,
+    spec.palette.metal,
+    spec.palette.skin,
+    spec.palette.hair,
+    palObj.highlight
   ];
 
-  if (analysis.hasHeavyArmor) detectedFeatures.push('Zirah Logam');
-  if (analysis.hasRobeOrCoat) detectedFeatures.push('Jubah / Mantel');
-  if (analysis.hasCape) detectedFeatures.push('Jubah Belakang');
-  if (analysis.hasShield) detectedFeatures.push('Perisai');
-  if (analysis.hasSword) detectedFeatures.push('Pedang');
-  if (analysis.hasStaff) detectedFeatures.push('Tongkat Sihir');
-  if (analysis.hasBow) detectedFeatures.push('Busur Panah');
-  if (analysis.hasWings) detectedFeatures.push('Sayap');
+  const detectedAnimations = detectRequestedAnimations(prompt, explicitAnimations);
+  const isAnimated = detectedAnimations.length > 0;
+  const factor = resolution / 32;
 
-  // Build Cel Animations (Frame-by-Frame independent pixel matrices)
-  const animations: Record<string, SpriteFrame[]> = {
-    idle: [
-      { id: 'idle-0', name: 'Idle 1 (Pose Dasar)', pixels: basePixels }
-    ]
-  };
+  // 3. Assemble Animations from Spec + Pose Table
+  const animations: Record<string, SpriteFrame[]> = {};
 
-  // If user requested 'idle' animation, add breathing frames
-  if (detectedAnimations.includes('idle')) {
-    const idleStep1 = drawCharacterCel(size, colors, analysis, { type: 'idle', step: 1 });
-    const idleStep2 = drawCharacterCel(size, colors, analysis, { type: 'idle', step: 0 });
+  // Build base single frame
+  const { body: baseBody, fx: baseFx } = drawCharacterCelFromSpec(spec, POSES.idle[0], 32);
+  const baseCel32 = postProcessFrame(baseBody, baseFx, spec, 30);
+  const basePixels = upscaleNearest(baseCel32, factor);
+
+  if (!isAnimated) {
+    // Static mode: 1 single cel frame
     animations.idle = [
-      { id: 'idle-0', name: 'Idle 1 (Napas)', pixels: basePixels },
-      { id: 'idle-1', name: 'Idle 2 (Dada Naik)', pixels: idleStep1 },
-      { id: 'idle-2', name: 'Idle 3 (Settle)', pixels: idleStep2 }
+      { id: 'idle-0', name: 'Pose Dasar', pixels: basePixels }
     ];
+  } else {
+    // Animated mode: frame-by-frame cels
+    animations.idle = POSES.idle.slice(0, 3).map((pose, i) => {
+      const { body, fx } = drawCharacterCelFromSpec(spec, pose, 32);
+      const cel32 = postProcessFrame(body, fx, spec, 30);
+      const finalGrid = upscaleNearest(cel32, factor);
+      return {
+        id: `idle-${i}`,
+        name: `Idle ${i + 1}`,
+        pixels: finalGrid
+      };
+    });
+
+    if (detectedAnimations.includes('walk') || isAnimated) {
+      // 4-frame walk cycle sampled from contact and passing poses (0, 2, 3, 5)
+      const walkKeyIndices = [0, 2, 3, 5];
+      animations.walk = walkKeyIndices.map((poseIdx, i) => {
+        const pose = POSES.walk[poseIdx] || POSES.walk[0];
+        const { body, fx } = drawCharacterCelFromSpec(spec, pose, 32);
+        const cel32 = postProcessFrame(body, fx, spec, 30);
+        const finalGrid = upscaleNearest(cel32, factor);
+        return {
+          id: `walk-${i}`,
+          name: `Walk ${i + 1}`,
+          pixels: finalGrid
+        };
+      });
+    }
+
+    if (detectedAnimations.includes('attack') || isAnimated) {
+      // 3-frame attack cycle: windup, slash strike, recover (1, 3, 5)
+      const attackKeyIndices = [1, 3, 5];
+      animations.attack = attackKeyIndices.map((poseIdx, i) => {
+        const pose = POSES.attack[poseIdx] || POSES.attack[0];
+        const { body, fx } = drawCharacterCelFromSpec(spec, pose, 32);
+        const cel32 = postProcessFrame(body, fx, spec, 30);
+        const finalGrid = upscaleNearest(cel32, factor);
+        return {
+          id: `attack-${i}`,
+          name: `Attack ${i + 1}`,
+          pixels: finalGrid
+        };
+      });
+    }
   }
 
-  // If user requested 'walk', synthesize 4 distinct cel frames
-  if (detectedAnimations.includes('walk')) {
-    animations.walk = [
-      { id: 'walk-0', name: 'Walk 1 (Kaki Kiri Depan)', pixels: drawCharacterCel(size, colors, analysis, { type: 'walk', step: 0 }) },
-      { id: 'walk-1', name: 'Walk 2 (Passing - Kaki Naik)', pixels: drawCharacterCel(size, colors, analysis, { type: 'walk', step: 1 }) },
-      { id: 'walk-2', name: 'Walk 3 (Kaki Kanan Depan)', pixels: drawCharacterCel(size, colors, analysis, { type: 'walk', step: 2 }) },
-      { id: 'walk-3', name: 'Walk 4 (Passing - Kaki Naik)', pixels: drawCharacterCel(size, colors, analysis, { type: 'walk', step: 3 }) }
-    ];
-  }
-
-  // If user requested 'attack', synthesize 3 distinct cel frames
-  if (detectedAnimations.includes('attack')) {
-    animations.attack = [
-      { id: 'attack-0', name: 'Attack 1 (Persiapan / Wind-up)', pixels: drawCharacterCel(size, colors, analysis, { type: 'attack', step: 0 }) },
-      { id: 'attack-1', name: 'Attack 2 (Tebasan Penuh)', pixels: drawCharacterCel(size, colors, analysis, { type: 'attack', step: 1 }) },
-      { id: 'attack-2', name: 'Attack 3 (Follow-through)', pixels: drawCharacterCel(size, colors, analysis, { type: 'attack', step: 2 }) }
-    ];
-  }
-
-  // If user requested 'hurt', synthesize 2 distinct cel frames
-  if (detectedAnimations.includes('hurt')) {
-    animations.hurt = [
-      { id: 'hurt-0', name: 'Hurt 1 (Impact / Terhentak)', pixels: drawCharacterCel(size, colors, analysis, { type: 'hurt', step: 0 }) },
-      { id: 'hurt-1', name: 'Hurt 2 (Stagger Recovery)', pixels: drawCharacterCel(size, colors, analysis, { type: 'hurt', step: 1 }) }
-    ];
-  }
-
-  // Determine active frame sequence
-  const activeKey = detectedAnimations[0] || 'idle';
+  // Active frames
+  const activeKey = isAnimated ? (detectedAnimations[0] || 'idle') : 'idle';
   const activeFrames = animations[activeKey] || animations.idle;
+
+  const features: string[] = [
+    `Archetype: ${spec.archetype.toUpperCase()}`,
+    `Body: ${spec.body}`,
+    `Headwear: ${spec.head}`,
+    `Weapon: ${spec.weapon}`,
+    `Offhand: ${spec.offhand}`,
+    `Cape: ${spec.cape}`,
+    isAnimated ? `Animasi Frame-by-Frame: [${detectedAnimations.join(', ')}]` : 'Mode Karakter Statis (Single Cel)'
+  ];
 
   return {
     pixels: basePixels,
-    palette: pal,
+    palette,
     frames: activeFrames,
     animations,
-    features: detectedFeatures,
+    features,
     isAnimated,
-    detectedAnimations
+    detectedAnimations,
+    spec
   };
 }
 
@@ -779,38 +1039,63 @@ export function synthesizeAnimationSequence(
   animType: AnimationType,
   resolution: SpriteResolution,
   palette: string[],
-  prompt: string
+  prompt: string,
+  spec?: CharacterSpec
 ): SpriteFrame[] {
-  const size = resolution;
-  const analysis = analyzePromptSemantics(prompt);
-  const colors = resolveColorKit(palette, analysis.primaryTone);
+  const activeSpec = spec || specFromPromptProcedural(prompt);
+  const factor = resolution / 32;
 
+  let selectedPoses: Pose[] = [];
   if (animType === 'walk') {
-    return [
-      { id: `walk-0-${Date.now()}`, name: 'Walk 1 (Kaki Kiri Depan)', pixels: drawCharacterCel(size, colors, analysis, { type: 'walk', step: 0 }) },
-      { id: `walk-1-${Date.now()}`, name: 'Walk 2 (Passing Naik)', pixels: drawCharacterCel(size, colors, analysis, { type: 'walk', step: 1 }) },
-      { id: `walk-2-${Date.now()}`, name: 'Walk 3 (Kaki Kanan Depan)', pixels: drawCharacterCel(size, colors, analysis, { type: 'walk', step: 2 }) },
-      { id: `walk-3-${Date.now()}`, name: 'Walk 4 (Passing Naik)', pixels: drawCharacterCel(size, colors, analysis, { type: 'walk', step: 3 }) }
-    ];
+    selectedPoses = [POSES.walk[0], POSES.walk[2], POSES.walk[3], POSES.walk[5]];
   } else if (animType === 'attack') {
-    return [
-      { id: `attack-0-${Date.now()}`, name: 'Attack 1 (Wind-up)', pixels: drawCharacterCel(size, colors, analysis, { type: 'attack', step: 0 }) },
-      { id: `attack-1-${Date.now()}`, name: 'Attack 2 (Tebasan Penuh)', pixels: drawCharacterCel(size, colors, analysis, { type: 'attack', step: 1 }) },
-      { id: `attack-2-${Date.now()}`, name: 'Attack 3 (Follow-through)', pixels: drawCharacterCel(size, colors, analysis, { type: 'attack', step: 2 }) }
-    ];
+    selectedPoses = [POSES.attack[1], POSES.attack[3], POSES.attack[5]];
   } else if (animType === 'hurt') {
-    return [
-      { id: `hurt-0-${Date.now()}`, name: 'Hurt 1 (Impact)', pixels: drawCharacterCel(size, colors, analysis, { type: 'hurt', step: 0 }) },
-      { id: `hurt-1-${Date.now()}`, name: 'Hurt 2 (Stagger)', pixels: drawCharacterCel(size, colors, analysis, { type: 'hurt', step: 1 }) }
+    // 2 hurt frames: Impact (recoiling) and Stagger recovery
+    selectedPoses = [
+      {
+        bodyDy: -1,
+        headDx: -2,
+        headDy: -1,
+        armFront: 50,
+        armBack: -40,
+        legFrontX: 2,
+        legBackX: -3,
+        legFrontLift: 1,
+        legBackLift: 0,
+        weaponAngle: 70,
+        capeSway: -2,
+        slashFx: 0
+      },
+      {
+        bodyDy: 1,
+        headDx: -1,
+        headDy: 1,
+        armFront: 20,
+        armBack: -20,
+        legFrontX: 1,
+        legBackX: -1,
+        legFrontLift: 0,
+        legBackLift: 0,
+        weaponAngle: 20,
+        capeSway: 1,
+        slashFx: 0
+      }
     ];
   } else {
-    // Idle
-    return [
-      { id: `idle-0-${Date.now()}`, name: 'Idle 1 (Napas Dasar)', pixels: drawCharacterCel(size, colors, analysis, { type: 'idle', step: 0 }) },
-      { id: `idle-1-${Date.now()}`, name: 'Idle 2 (Dada Naik)', pixels: drawCharacterCel(size, colors, analysis, { type: 'idle', step: 1 }) },
-      { id: `idle-2-${Date.now()}`, name: 'Idle 3 (Settle)', pixels: drawCharacterCel(size, colors, analysis, { type: 'idle', step: 0 }) }
-    ];
+    selectedPoses = POSES.idle.slice(0, 3);
   }
+
+  return selectedPoses.map((pose, i) => {
+    const { body, fx } = drawCharacterCelFromSpec(activeSpec, pose, 32);
+    const cel32 = postProcessFrame(body, fx, activeSpec, 30);
+    const finalGrid = upscaleNearest(cel32, factor);
+    return {
+      id: `${animType}-${i}-${Date.now()}`,
+      name: `${animType.toUpperCase()} ${i + 1}`,
+      pixels: finalGrid
+    };
+  });
 }
 
 /**
@@ -862,17 +1147,17 @@ export function evaluateSpriteMatrix(
   }
 
   let paletteHarmonyScore = 85;
-  if (distinctColors >= 4 && distinctColors <= 12) {
+  if (distinctColors >= 4 && distinctColors <= 16) {
     paletteHarmonyScore += 10;
   } else if (distinctColors < 3) {
     paletteHarmonyScore -= 20;
   }
 
-  let adherenceScore = 90;
+  let adherenceScore = 92;
   const missingFeatures: string[] = [];
   const pLower = prompt.toLowerCase();
 
-  if (pLower.includes('shield') && !detectedFeatures.some(f => f.includes('Perisai') || f.includes('Shield'))) {
+  if (pLower.includes('shield') && !detectedFeatures.some(f => f.toLowerCase().includes('shield') || f.toLowerCase().includes('perisai'))) {
     adherenceScore -= 8;
     missingFeatures.push('Perisai belum terpasang jelas');
   }
@@ -889,7 +1174,7 @@ export function evaluateSpriteMatrix(
   const suggestedFixes: string[] = [];
   if (distinctColors < 5) suggestedFixes.push('Tambahkan 1 tingkat highlight specular pada bagian armor/senjata');
   if (density < 0.15) suggestedFixes.push('Pertegas siluet dengan menambah ketebalan ekstremitas tubuh');
-  suggestedFixes.push('Animasi berbasis frame-by-frame sejati tanpa rigging/translasi terprogram');
+  suggestedFixes.push('Animasi berbasis discrete frame-by-frame sejati tanpa rigging skeletal');
 
   const verdict = overallQuality === 'exceptional'
     ? 'Sprite memenuhi standar animasi cel pixel art profesional. Setiap frame digambar secara mandiri tanpa rigging skeletal.'
@@ -915,7 +1200,7 @@ export function evaluateSpriteMatrix(
 }
 
 /**
- * Applies AI automated refinement pass to enhance contrast and remove stray pixels
+ * Applies automated refinement pass to enhance contrast and remove stray pixels
  */
 export function applyAutoRefinement(pixels: string[][], palette: string[]): string[][] {
   const size = pixels.length;

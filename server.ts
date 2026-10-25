@@ -5,6 +5,12 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
+import {
+  SPRITE_SYSTEM_PROMPT,
+  SPEC_JSON_SCHEMA,
+  validateSpec,
+  DEFAULT_SPEC
+} from './src/utils/pixelforgeSpec.ts';
 
 dotenv.config();
 
@@ -224,9 +230,9 @@ app.post('/api/proxy/custom', async (req: Request, res: Response) => {
   }
 });
 
-// 4. Gemini Generation & Evaluation Endpoint
+// 4. Gemini Generation & Art Director Endpoint (CharacterSpec with Validation + Retry)
 app.post('/api/gemini/generate', async (req: Request, res: Response) => {
-  const { prompt, resolution, paletteName, colorGrading } = req.body;
+  const { prompt } = req.body;
   const gemini = getGeminiClient();
 
   if (!gemini) {
@@ -240,37 +246,49 @@ app.post('/api/gemini/generate', async (req: Request, res: Response) => {
   try {
     const response = await gemini.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `You are an expert retro pixel artist and art director. Analyze this character sprite request:
-Prompt: "${prompt}"
-Resolution: ${resolution}x${resolution}
-Palette: ${paletteName}
-Color Grading: ${colorGrading || 'vibrant'}
-
-Analyze the character freely based on user prompt (do not force into rigid archetypes).
-Also check if the user asked for animation (e.g., walk, run, attack, hurt, idle, or none).
-
-Provide a JSON object with:
-{
-  "characterName": "creative short name in Indonesian or English",
-  "direction": "front | side | isometric",
-  "dominantColors": ["#hex1", "#hex2"],
-  "hasAnimationRequest": boolean,
-  "requestedAnimations": ["walk" | "attack" | "hurt" | "idle"],
-  "anatomy": {
-    "head": "description of headgear/hair/eyes",
-    "torso": "description of clothing/armor",
-    "weapon": "description of weapon or item in hand",
-    "accessory": "description of cloak, wings, shield, or tech gear"
-  },
-  "visualAdvice": "concise tip for clean pixel clustering, vibrant colors, and zero ground shadow"
-}
-Output pure JSON only without markdown formatting.`
+      contents: prompt,
+      config: {
+        systemInstruction: SPRITE_SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+        responseSchema: SPEC_JSON_SCHEMA as any,
+        temperature: 0.3
+      }
     });
 
     const text = response.text || '';
     const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
     const parsed = JSON.parse(cleanJson);
-    return res.json({ success: true, analysis: parsed });
+    const { spec, errors } = validateSpec(parsed);
+
+    if (spec) {
+      return res.json({ success: true, spec, validationErrors: [] });
+    }
+
+    // Try 1 retry with error feedback if initial spec had validation errors
+    const retryResp = await gemini.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `${prompt}\n\nPERBAIKI kesalahan berikut dari jawaban sebelumnya:\n- ${errors.join('\n- ')}`,
+      config: {
+        systemInstruction: SPRITE_SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+        responseSchema: SPEC_JSON_SCHEMA as any,
+        temperature: 0.2
+      }
+    });
+    const retryText = retryResp.text || '';
+    const retryParsed = JSON.parse(retryText.replace(/```json/g, '').replace(/```/g, '').trim());
+    const retryValidation = validateSpec(retryParsed);
+
+    if (retryValidation.spec) {
+      return res.json({ success: true, spec: retryValidation.spec, validationErrors: [] });
+    }
+
+    return res.json({
+      success: true,
+      spec: DEFAULT_SPEC,
+      validationErrors: errors,
+      fallbackUsed: true
+    });
   } catch (err: any) {
     return res.json({ success: false, error: err.message, useFallback: true });
   }
