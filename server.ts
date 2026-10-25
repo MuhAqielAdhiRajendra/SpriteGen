@@ -57,7 +57,7 @@ app.post('/api/ai/test-connection', async (req: Request, res: Response) => {
         });
       }
       const response = await gemini.models.generateContent({
-        model: model || 'gemini-2.5-flash',
+        model: model || process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
         contents: 'Ping test. Reply with word OK.'
       });
       return res.json({
@@ -245,7 +245,7 @@ app.post('/api/gemini/generate', async (req: Request, res: Response) => {
 
   try {
     const response = await gemini.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
       contents: prompt,
       config: {
         systemInstruction: SPRITE_SYSTEM_PROMPT,
@@ -266,7 +266,7 @@ app.post('/api/gemini/generate', async (req: Request, res: Response) => {
 
     // Try 1 retry with error feedback if initial spec had validation errors
     const retryResp = await gemini.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
       contents: `${prompt}\n\nPERBAIKI kesalahan berikut dari jawaban sebelumnya:\n- ${errors.join('\n- ')}`,
       config: {
         systemInstruction: SPRITE_SYSTEM_PROMPT,
@@ -305,7 +305,7 @@ app.post('/api/gemini/evaluate', async (req: Request, res: Response) => {
 
   try {
     const response = await gemini.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
       contents: `You are a senior pixel art art director.
 Review this generated ${resolution}x${resolution} sprite based on the prompt: "${prompt}".
 Detected Features: ${JSON.stringify(detectedFeatures)}

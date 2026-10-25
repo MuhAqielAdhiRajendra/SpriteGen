@@ -13,10 +13,10 @@ const DEFAULT_PROVIDERS: Record<AIProviderType, AIProviderConfig> = {
   gemini: {
     id: 'gemini-default',
     type: 'gemini',
-    name: 'Google Gemini 2.5 Flash',
-    description: 'Model cloud built-in bertenaga tinggi untuk penalaran visual pixel art',
+    name: 'Google Gemini 3.1 Flash Lite',
+    description: 'Model cloud built-in berkecepatan tinggi untuk penalaran visual pixel art',
     baseUrl: '/api/gemini',
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.1-flash-lite',
     temperature: 0.3
   },
   ollama: {

@@ -13,7 +13,7 @@ import {
   detectRequestedAnimations,
   synthesizeAnimationSequence,
   PALETTES
-} from './pixelEngine';
+} from './pixelEngine.ts';
 
 test('createEmptyGrid generates correct dimensions and transparency', () => {
   const grid32 = createEmptyGrid(32);

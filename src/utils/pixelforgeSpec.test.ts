@@ -12,7 +12,7 @@ import {
   validateSequence,
   POSES,
   drawCharacterCelFromSpec
-} from './pixelEngine';
+} from './pixelEngine.ts';
 
 test('validateSpec verifies complete enum schema and hex colors', () => {
   const validResult = validateSpec(DEFAULT_SPEC);
