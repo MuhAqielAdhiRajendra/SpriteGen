@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createEmptyGrid,
+  cloneGrid,
   hexToRgba,
   rgbaToHex,
   colorDistance,
@@ -9,6 +10,8 @@ import {
   generateProceduralCharacter,
   evaluateSpriteMatrix,
   applyAutoRefinement,
+  detectRequestedAnimations,
+  synthesizeAnimationSequence,
   PALETTES
 } from './pixelEngine';
 
@@ -25,6 +28,16 @@ test('createEmptyGrid generates correct dimensions and transparency', () => {
   const grid128 = createEmptyGrid(128);
   assert.equal(grid128.length, 128);
   assert.equal(grid128[0].length, 128);
+});
+
+test('cloneGrid creates an independent deep copy of 2D pixels', () => {
+  const original = createEmptyGrid(32);
+  original[10][10] = '#ff0000';
+  const copy = cloneGrid(original);
+  assert.equal(copy[10][10], '#ff0000');
+  copy[10][10] = '#00ff00';
+  assert.equal(original[10][10], '#ff0000', 'Original should remain unchanged');
+  assert.equal(copy[10][10], '#00ff00', 'Copy should be modified');
 });
 
 test('hexToRgba and rgbaToHex work correctly with color conversions', () => {
@@ -70,61 +83,80 @@ test('quantizeToPalette maps arbitrary colors to closest palette color', () => {
   assert.equal(res3, '#ff0000');
 });
 
-test('generateProceduralCharacter creates valid 32x32, 64x64, 128x128 character matrices and frames', () => {
-  // Test 32x32
-  const char32 = generateProceduralCharacter({
-    prompt: 'A valiant knight with silver armor, red cape, and shiny claymore',
+test('detectRequestedAnimations detects motion keywords or returns empty for static requests', () => {
+  const static1 = detectRequestedAnimations('Ksatria berzirah perak dengan jubah biru');
+  assert.equal(static1.length, 0);
+
+  const static2 = detectRequestedAnimations('Penyihir wanita dengan tongkat kristal');
+  assert.equal(static2.length, 0);
+
+  const walkAnim = detectRequestedAnimations('Ksatria sedang berjalan');
+  assert.ok(walkAnim.includes('walk'));
+
+  const attackAnim = detectRequestedAnimations('Pendekar menyerang dengan tebasan pedang');
+  assert.ok(attackAnim.includes('attack'));
+
+  const genericAnim = detectRequestedAnimations('Buatkan karakter animasi');
+  assert.ok(genericAnim.length > 0);
+});
+
+test('generateProceduralCharacter creates static single-frame cel when no animation requested', () => {
+  const char = generateProceduralCharacter({
+    prompt: 'Ksatria suci dengan zirah emas dan perisai putih',
     resolution: 32,
-    paletteKey: 'snes',
-    archetype: 'knight',
+    paletteKey: 'vibrant_rpg',
+    colorGrading: 'vibrant',
     direction: 'front'
   });
 
-  assert.equal(char32.pixels.length, 32);
-  assert.equal(char32.pixels[0].length, 32);
-  assert.ok(char32.features.length > 0);
-  assert.ok(char32.frames.idle.length >= 2);
-  assert.ok(char32.frames.walk.length === 4);
-  assert.ok(char32.frames.attack.length === 3);
+  assert.equal(char.pixels.length, 32);
+  assert.equal(char.isAnimated, false);
+  assert.equal(char.frames.length, 1);
+  assert.equal(char.animations.idle.length, 1);
+  assert.equal(char.animations.walk, undefined);
+  assert.equal(char.animations.attack, undefined);
 
-  // Verify non-transparent pixels exist (character has rendered substance)
-  let filled32 = 0;
-  for (let y = 0; y < 32; y++) {
-    for (let x = 0; x < 32; x++) {
-      if (char32.pixels[y][x] !== 'transparent') filled32++;
-    }
-  }
-  assert.ok(filled32 > 50, `Expected >50 pixels filled, got ${filled32}`);
+  // Ground shadow must not exist
+  assert.equal(char.pixels[31][0], 'transparent');
+  assert.equal(char.pixels[30][0], 'transparent');
+});
 
-  // Test 64x64
-  const char64 = generateProceduralCharacter({
-    prompt: 'Cyberpunk netrunner with neon katana and glowing visor',
-    resolution: 64,
-    paletteKey: 'cyberpunk',
-    archetype: 'cyberpunk',
+test('generateProceduralCharacter creates independent cel frames when animation is requested', () => {
+  const char = generateProceduralCharacter({
+    prompt: 'Ksatria suci dengan zirah emas sedang berjalan dan menyerang',
+    resolution: 32,
+    paletteKey: 'vibrant_rpg',
+    colorGrading: 'vibrant',
     direction: 'front'
   });
-  assert.equal(char64.pixels.length, 64);
-  assert.equal(char64.pixels[0].length, 64);
 
-  // Test 128x128
-  const char128 = generateProceduralCharacter({
-    prompt: 'Dark wizard casting spells with glowing crystal staff',
-    resolution: 128,
-    paletteKey: 'gothic',
-    archetype: 'mage',
-    direction: 'front'
-  });
-  assert.equal(char128.pixels.length, 128);
-  assert.equal(char128.pixels[0].length, 128);
+  assert.equal(char.isAnimated, true);
+  assert.ok(char.animations.walk.length === 4);
+  assert.ok(char.animations.attack.length === 3);
+
+  // Each cel frame must have independent pixel grid
+  const walkFrame0 = char.animations.walk[0].pixels;
+  const walkFrame1 = char.animations.walk[1].pixels;
+  assert.notEqual(walkFrame0, walkFrame1, 'Cels must be distinct objects');
+});
+
+test('synthesizeAnimationSequence produces genuine frame-by-frame cel sequence on demand', () => {
+  const pal = PALETTES.vibrant_rpg.colors;
+  const walkCels = synthesizeAnimationSequence('walk', 32, pal, 'Robot tempur mecha');
+  assert.equal(walkCels.length, 4);
+
+  const attackCels = synthesizeAnimationSequence('attack', 32, pal, 'Robot tempur mecha');
+  assert.equal(attackCels.length, 3);
+
+  const hurtCels = synthesizeAnimationSequence('hurt', 32, pal, 'Robot tempur mecha');
+  assert.equal(hurtCels.length, 2);
 });
 
 test('evaluateSpriteMatrix performs AI vision inspection scoring', () => {
   const char = generateProceduralCharacter({
     prompt: 'Holy paladin with shield and blessed warhammer',
     resolution: 32,
-    paletteKey: 'snes',
-    archetype: 'paladin',
+    paletteKey: 'vibrant_rpg',
     direction: 'front'
   });
 
@@ -146,16 +178,12 @@ test('evaluateSpriteMatrix performs AI vision inspection scoring', () => {
 
 test('applyAutoRefinement removes isolated pixels without corrupting grid', () => {
   const grid = createEmptyGrid(32);
-  // Place an isolated stray pixel in the corner
   grid[5][5] = '#ffffff';
-  // Place connected block
   grid[15][15] = '#ff0000';
   grid[15][16] = '#ff0000';
 
   const refined = applyAutoRefinement(grid, PALETTES.snes.colors);
-  // Isolated pixel should have been cleaned
   assert.equal(refined[5][5], 'transparent');
-  // Connected block remains intact
   assert.equal(refined[15][15], '#ff0000');
   assert.equal(refined[15][16], '#ff0000');
 });

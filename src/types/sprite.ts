@@ -1,18 +1,19 @@
 export type SpriteResolution = 32 | 64 | 128;
 
-export type CharacterArchetype = 
-  | 'knight'
-  | 'mage'
-  | 'cyberpunk'
-  | 'rogue'
-  | 'mecha'
-  | 'archer'
-  | 'monster'
-  | 'paladin';
-
 export type CharacterDirection = 'front' | 'side' | 'isometric' | 'back';
 
 export type AnimationType = 'idle' | 'walk' | 'attack' | 'hurt';
+
+export type ColorGradingMode = 'vibrant' | 'neon' | 'warm' | 'cool' | 'pastel';
+
+/**
+ * An independent cel frame containing its own distinct pixel grid matrix
+ */
+export interface SpriteFrame {
+  id: string;
+  name: string;
+  pixels: string[][]; // Independent 2D array of pixel color strings
+}
 
 export interface SpriteEvaluation {
   adherenceScore: number; // 0-100
@@ -47,9 +48,18 @@ export interface CharacterSprite {
   resolution: SpriteResolution;
   paletteName: string;
   palette: string[];
-  archetype: CharacterArchetype;
+  colorGrading: ColorGradingMode;
   direction: CharacterDirection;
-  frames: Record<AnimationType, string[][][]>;
+  isAnimated: boolean;
+  requestedAnimations: AnimationType[];
+  fps: number;
+  loop: boolean;
+  activeAnimationKey: string;
+  // All animation sequences containing independent frame-by-frame cels
+  animations: Record<string, SpriteFrame[]>;
+  // Active frame sequence being edited in timeline
+  frames: SpriteFrame[];
+  currentFrameIndex: number;
   currentPixels: string[][];
   aiEvaluation: SpriteEvaluation;
   pipelineLogs: PipelineStep[];
@@ -80,8 +90,9 @@ export interface GenerationRequest {
   prompt: string;
   resolution: SpriteResolution;
   paletteName: string;
-  archetype: CharacterArchetype;
+  colorGrading?: ColorGradingMode;
   direction: CharacterDirection;
+  requestedAnimations?: AnimationType[];
   providerConfig: AIProviderConfig;
   autoRefine: boolean;
 }

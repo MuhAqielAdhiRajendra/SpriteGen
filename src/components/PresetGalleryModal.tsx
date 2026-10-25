@@ -1,5 +1,5 @@
 import React from 'react';
-import { CharacterSprite, SpriteResolution } from '../types/sprite';
+import { CharacterSprite, SpriteResolution, ColorGradingMode } from '../types/sprite';
 import { Sparkles, X, Clock, ArrowRight, FolderArchive } from 'lucide-react';
 
 interface PresetGalleryModalProps {
@@ -9,7 +9,7 @@ interface PresetGalleryModalProps {
     prompt: string;
     resolution: SpriteResolution;
     paletteKey: string;
-    archetype: any;
+    colorGrading?: ColorGradingMode;
     direction: any;
   }) => void;
   historyList: CharacterSprite[];
@@ -18,56 +18,56 @@ interface PresetGalleryModalProps {
 
 const PRESET_CHARACTERS = [
   {
-    name: 'Paladin Cahaya Suci',
-    archetype: 'paladin',
-    prompt: 'Kesatria suci dengan armor perak tebal, perisai emas berlambang salib matahari, jubah putih bertepi emas, dan helm pelindung bertanduk halus',
+    name: 'Paladin Cahaya Bersinar',
+    prompt: 'Kesatria suci dengan armor perak tebal, perisai emas berlambang salib matahari, jubah putih bersih bertepi emas, dan helm pelindung bertanduk halus',
     resolution: 32 as SpriteResolution,
-    paletteKey: 'snes',
+    paletteKey: 'vibrant_rpg',
+    colorGrading: 'warm' as ColorGradingMode,
     direction: 'front' as const,
     tag: 'RPG Classic'
   },
   {
     name: 'Cyberpunk Neon Ronin',
-    archetype: 'cyberpunk',
-    prompt: 'Pendekar cyberpunk berjaket kulit hitam dengan kerah tinggi neon cyan, visor augmented reality menyala biru, dan pedang katana berenergi plasma',
+    prompt: 'Pendekar cyberpunk berjaket hitam kerah tinggi neon cyan menyala, visor optik augmented reality biru, dan pedang katana plasma',
     resolution: 64 as SpriteResolution,
-    paletteKey: 'cyberpunk',
+    paletteKey: 'cyber_glow',
+    colorGrading: 'neon' as ColorGradingMode,
     direction: 'front' as const,
     tag: 'Sci-Fi'
   },
   {
-    name: 'Penyihir Void Nether',
-    archetype: 'mage',
-    prompt: 'Penyihir kuno berjubah ungu gelap dengan tudung misterius, memegang tongkat kayu hitam dengan batu kristal melayang bercahaya di pucuknya',
+    name: 'Penyihir Kristal Astral',
+    prompt: 'Penyihir berjubah ungu terang dengan tudung bertepi perak, memegang tongkat sihir dengan batu kristal melayang bercahaya di pucuknya',
     resolution: 64 as SpriteResolution,
-    paletteKey: 'gothic',
+    paletteKey: 'vibrant_rpg',
+    colorGrading: 'cool' as ColorGradingMode,
     direction: 'front' as const,
-    tag: 'Dark Fantasy'
+    tag: 'Fantasy'
   },
   {
-    name: 'Mecha Droid Vanguard',
-    archetype: 'mecha',
-    prompt: 'Robot tempur mecha bersendi hidrolik dengan plat pelindung dada tebal, sensor optik mata ganda menyala kuning, dan meriam bahu terpasang',
+    name: 'Robot Tempur Mecha Vanguard',
+    prompt: 'Robot mecha bersendi hidrolik dengan plat zirah dada tebal, sensor optik mata ganda menyala kuning, dan meriam bahu terpasang',
     resolution: 64 as SpriteResolution,
-    paletteKey: 'cyberpunk',
+    paletteKey: 'cyber_glow',
+    colorGrading: 'neon' as ColorGradingMode,
     direction: 'front' as const,
     tag: 'Mecha'
   },
   {
     name: 'Pemanah Hutan Sylph',
-    archetype: 'archer',
     prompt: 'Pemanah pengembara dengan tudung hijau lumut, busur kayu panjang melengkung anggun, tempat anak panah di punggung, dan jubah tipis',
     resolution: 32 as SpriteResolution,
     paletteKey: 'pastel',
+    colorGrading: 'pastel' as ColorGradingMode,
     direction: 'front' as const,
     tag: 'Fantasy'
   },
   {
-    name: 'Rogue Bayangan Malam',
-    archetype: 'rogue',
-    prompt: 'Pembunuh bayangan bertopeng kain hitam dengan sepasang belati baja bergerigi di kedua tangan, jubah pendek, dan ikat pinggang perlengkapan',
+    name: 'Pendekar Pedang Bayangan',
+    prompt: 'Pendekar bayangan bertopeng kain hitam dengan sepasang belati baja bergerigi di kedua tangan, jubah pendek, dan ikat pinggang perlengkapan',
     resolution: 32 as SpriteResolution,
-    paletteKey: 'gothic',
+    paletteKey: 'vibrant_rpg',
+    colorGrading: 'vibrant' as ColorGradingMode,
     direction: 'front' as const,
     tag: 'Stealth'
   }
@@ -94,7 +94,7 @@ export const PresetGalleryModal: React.FC<PresetGalleryModalProps> = ({
                 Preset Karakter & Riwayat Sesi
               </h2>
               <p className="text-xs text-slate-400">
-                Pilih template inspirasi visual atau muat kembali karakter yang pernah dibuat
+                Pilih inspirasi visual karakter bebas atau muat kembali karakter sesi ini
               </p>
             </div>
           </div>
@@ -172,7 +172,7 @@ export const PresetGalleryModal: React.FC<PresetGalleryModalProps> = ({
                         {item.prompt}
                       </span>
                       <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                        {item.resolution}×{item.resolution} px · Skor: {item.aiEvaluation?.adherenceScore}% · {item.providerUsed}
+                        {item.resolution}×{item.resolution} px · Skor: {item.aiEvaluation?.adherenceScore}% · {item.isAnimated ? 'Ada Animasi' : 'Karakter Statis'}
                       </div>
                     </div>
 

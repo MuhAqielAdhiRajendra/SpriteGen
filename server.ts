@@ -1,4 +1,5 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -225,7 +226,7 @@ app.post('/api/proxy/custom', async (req: Request, res: Response) => {
 
 // 4. Gemini Generation & Evaluation Endpoint
 app.post('/api/gemini/generate', async (req: Request, res: Response) => {
-  const { prompt, resolution, paletteName, archetype } = req.body;
+  const { prompt, resolution, paletteName, colorGrading } = req.body;
   const gemini = getGeminiClient();
 
   if (!gemini) {
@@ -239,25 +240,29 @@ app.post('/api/gemini/generate', async (req: Request, res: Response) => {
   try {
     const response = await gemini.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `You are an expert retro pixel artist. Analyze this character sprite request:
+      contents: `You are an expert retro pixel artist and art director. Analyze this character sprite request:
 Prompt: "${prompt}"
 Resolution: ${resolution}x${resolution}
-Archetype: ${archetype}
 Palette: ${paletteName}
+Color Grading: ${colorGrading || 'vibrant'}
+
+Analyze the character freely based on user prompt (do not force into rigid archetypes).
+Also check if the user asked for animation (e.g., walk, run, attack, hurt, idle, or none).
 
 Provide a JSON object with:
 {
-  "characterName": "creative short name",
-  "archetype": "knight | mage | cyberpunk | rogue | mecha | archer | monster | paladin",
+  "characterName": "creative short name in Indonesian or English",
   "direction": "front | side | isometric",
   "dominantColors": ["#hex1", "#hex2"],
+  "hasAnimationRequest": boolean,
+  "requestedAnimations": ["walk" | "attack" | "hurt" | "idle"],
   "anatomy": {
     "head": "description of headgear/hair/eyes",
     "torso": "description of clothing/armor",
-    "weapon": "description of weapon in hand",
-    "accessory": "description of cloak, wings, shield, or cybernetics"
+    "weapon": "description of weapon or item in hand",
+    "accessory": "description of cloak, wings, shield, or tech gear"
   },
-  "visualAdvice": "concise tip for pixel clustering and readability"
+  "visualAdvice": "concise tip for clean pixel clustering, vibrant colors, and zero ground shadow"
 }
 Output pure JSON only without markdown formatting.`
     });

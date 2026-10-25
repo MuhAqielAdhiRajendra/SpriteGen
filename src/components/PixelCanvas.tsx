@@ -9,7 +9,8 @@ import {
   Paintbrush,
   Eraser,
   Pipette,
-  PaintBucket
+  PaintBucket,
+  Layers
 } from 'lucide-react';
 
 interface PixelCanvasProps {
@@ -18,6 +19,10 @@ interface PixelCanvasProps {
   palette: string[];
   onChangePixels: (newPixels: string[][]) => void;
   characterName: string;
+  previousFramePixels?: string[][];
+  onionSkin?: boolean;
+  frameIndex?: number;
+  totalFrames?: number;
 }
 
 type ToolMode = 'pen' | 'eraser' | 'dropper' | 'bucket';
@@ -27,7 +32,11 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
   resolution,
   palette,
   onChangePixels,
-  characterName
+  characterName,
+  previousFramePixels,
+  onionSkin = false,
+  frameIndex = 0,
+  totalFrames = 1
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [zoom, setZoom] = useState<number>(() => (resolution === 32 ? 10 : resolution === 64 ? 5 : 2.5));
@@ -75,7 +84,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
     onChangePixels(next);
   };
 
-  // Render canvas
+  // Render canvas with Onion Skinning support
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -89,7 +98,24 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw pixels
+    // 1. Draw Onion Skin (previous frame ghost) if active
+    if (onionSkin && previousFramePixels) {
+      ctx.globalAlpha = 0.35;
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const prevColor = previousFramePixels[y]?.[x] || 'transparent';
+          const currColor = pixels[y]?.[x] || 'transparent';
+          // Draw previous frame pixel if current frame has nothing here
+          if (prevColor !== 'transparent' && currColor === 'transparent') {
+            ctx.fillStyle = prevColor;
+            ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+          }
+        }
+      }
+      ctx.globalAlpha = 1.0;
+    }
+
+    // 2. Draw Current Frame Pixels (100% opacity)
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         const color = pixels[y]?.[x] || 'transparent';
@@ -100,7 +126,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
       }
     }
 
-    // Draw grid lines
+    // 3. Draw Grid Lines
     if (showGrid && zoom >= 4) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
       ctx.lineWidth = 1;
@@ -117,15 +143,15 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
       }
     }
 
-    // Draw hover cursor indicator
+    // 4. Draw Hover Cursor Indicator
     if (hoverCoords) {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.strokeStyle = activeTool === 'eraser' ? 'rgba(244, 63, 94, 0.8)' : 'rgba(255, 255, 255, 0.7)';
       ctx.lineWidth = 1.5;
       ctx.strokeRect(hoverCoords.x * zoom, hoverCoords.y * zoom, zoom, zoom);
     }
-  }, [pixels, resolution, zoom, showGrid, hoverCoords]);
+  }, [pixels, previousFramePixels, onionSkin, resolution, zoom, showGrid, hoverCoords, activeTool]);
 
-  // Flood fill algorithm
+  // Flood Fill algorithm
   const floodFill = (startX: number, startY: number, targetFillColor: string) => {
     const targetOldColor = pixels[startY]?.[startX] || 'transparent';
     if (targetOldColor === targetFillColor) return;
@@ -208,7 +234,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
   };
 
   const handleClearCanvas = () => {
-    if (confirm('Bersihkan seluruh kanvas? Tindakan ini dapat dibatalkan dengan tombol Undo.')) {
+    if (confirm('Bersihkan frame ini? Tindakan ini dapat dibatalkan dengan tombol Undo.')) {
       pushHistory(pixels);
       const empty = Array(resolution).fill(null).map(() => Array(resolution).fill('transparent'));
       onChangePixels(empty);
@@ -280,7 +306,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
           <button
             onClick={handleClearCanvas}
             className="p-1.5 rounded-md bg-[#0b0f17] text-slate-400 hover:text-rose-400 border border-slate-800 transition-colors"
-            title="Bersihkan Kanvas"
+            title="Bersihkan Frame Ini"
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -321,7 +347,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
       </div>
 
       {/* Main Viewport Container */}
-      <div className="relative flex items-center justify-center p-6 bg-[#0b0f17] rounded-xl border border-slate-800/80 overflow-auto min-h-[380px] max-h-[500px]">
+      <div className="relative flex items-center justify-center p-6 bg-[#0b0f17] rounded-xl border border-slate-800/80 overflow-auto min-h-[360px] max-h-[480px]">
         {/* Canvas Frame with Checkerboard */}
         <div className="relative checkerboard-pattern rounded shadow-2xl border border-slate-700/50 p-0 inline-block overflow-hidden">
           <canvas
@@ -340,9 +366,20 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
           />
         </div>
 
-        {/* Bottom Left Coordinate Indicator */}
-        <div className="absolute bottom-3 left-3 px-2 py-1 bg-black/60 backdrop-blur-sm rounded text-[11px] font-mono text-slate-400 border border-slate-800/80">
-          {hoverCoords ? `X: ${hoverCoords.x} · Y: ${hoverCoords.y}` : `${resolution} × ${resolution} px`}
+        {/* Bottom Left Coordinate & Frame Indicator */}
+        <div className="absolute bottom-3 left-3 flex items-center gap-2">
+          <div className="px-2 py-1 bg-black/70 backdrop-blur-sm rounded text-[11px] font-mono text-slate-300 border border-slate-800/80">
+            {hoverCoords ? `X: ${hoverCoords.x} · Y: ${hoverCoords.y}` : `${resolution} × ${resolution} px`}
+          </div>
+          <div className="px-2 py-1 bg-indigo-950/80 backdrop-blur-sm rounded text-[11px] font-mono text-indigo-300 border border-indigo-800/60 font-semibold">
+            Frame #{frameIndex + 1} of {totalFrames}
+          </div>
+          {onionSkin && (
+            <div className="px-2 py-1 bg-amber-950/80 backdrop-blur-sm rounded text-[10px] font-medium text-amber-300 border border-amber-800/60 flex items-center gap-1">
+              <Layers className="w-3 h-3 text-amber-400" />
+              <span>Onion Skin Aktif</span>
+            </div>
+          )}
         </div>
 
         {/* Top Right Character Name Badge */}
