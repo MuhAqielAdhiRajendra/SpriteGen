@@ -208,6 +208,12 @@ export const PromptForm: React.FC<PromptFormProps> = ({
           </span>
         </div>
 
+        {activeProvider.type !== 'gemini' && (
+          <div className="p-2 bg-[#1c1917] border border-[#ea580c]/60 text-[10px] font-tech text-[#fbbf24] flex items-center gap-1.5">
+            <span>ℹ️ Catatan: Analisis gambar referensi visual hanya didukung oleh engine Google Gemini (engine saat ini: <strong>{activeProvider.name}</strong>).</span>
+          </div>
+        )}
+
         {referenceImage ? (
           <div className="flex items-center justify-between p-2 bg-[#141211] border-2 border-[#ea580c] shadow-[2px_2px_0_#000]">
             <div className="flex items-center gap-2.5 overflow-hidden">

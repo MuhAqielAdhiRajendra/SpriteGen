@@ -404,6 +404,62 @@ export const DEFAULT_SPEC: CharacterSpec = {
 };
 
 // ============================================================
+// 3.5. HELPER DIVERSITY & VALIDASI REFERENSI
+// ============================================================
+export function countSilhouetteDifferences(a: CharacterSpec, b: CharacterSpec): number {
+  let diff = 0;
+  if (a.body !== b.body) diff++;
+  if (a.head !== b.head) diff++;
+  if (a.weapon !== b.weapon) diff++;
+  if (a.offhand !== b.offhand) diff++;
+  if (a.cape !== b.cape) diff++;
+  if (a.proportions?.height !== b.proportions?.height) diff++;
+  if (a.proportions?.headSize !== b.proportions?.headSize) diff++;
+  if (a.proportions?.torsoWidth !== b.proportions?.torsoWidth) diff++;
+  if (a.proportions?.legLength !== b.proportions?.legLength) diff++;
+  if (a.proportions?.armThickness !== b.proportions?.armThickness) diff++;
+
+  const traitsA = (a.traits || []).slice().sort().join(',');
+  const traitsB = (b.traits || []).slice().sort().join(',');
+  if (traitsA !== traitsB) diff++;
+
+  if (a.hairStyle !== b.hairStyle) diff++;
+
+  return diff;
+}
+
+export function validateReferenceImagePayload(referenceImage: any): { valid: boolean; error?: string } {
+  if (!referenceImage) return { valid: true };
+  if (typeof referenceImage !== 'object') {
+    return { valid: false, error: 'referenceImage harus berupa objek { mimeType, data }' };
+  }
+  const validMimes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+  const mime = String(referenceImage.mimeType || '').toLowerCase();
+  if (!validMimes.includes(mime)) {
+    return { valid: false, error: `mimeType tidak didukung: ${referenceImage.mimeType}. Hanya PNG, JPEG, dan WebP yang diizinkan.` };
+  }
+  if (!referenceImage.data || typeof referenceImage.data !== 'string') {
+    return { valid: false, error: 'data gambar base64 tidak boleh kosong dan harus berupa string' };
+  }
+  const rawBase64 = referenceImage.data.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+  const sizeBytes = Math.round((rawBase64.length * 3) / 4);
+  const maxBytes = 2 * 1024 * 1024; // 2MB
+  if (sizeBytes > maxBytes) {
+    return { valid: false, error: `Ukuran gambar melebihi batas 2MB (${Math.round(sizeBytes / 1024)} KB terkompresi)` };
+  }
+  return { valid: true };
+}
+
+export function hashString(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+// ============================================================
 // 4. WARNA: ramp shading konsisten (shadow/base/light) + outline otomatis
 // ============================================================
 type RGB = [number, number, number];

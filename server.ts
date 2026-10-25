@@ -12,7 +12,9 @@ import {
   REFERENCE_ANALYSIS_PROMPT,
   validateSpec,
   DEFAULT_SPEC,
-  CharacterSpec
+  CharacterSpec,
+  countSilhouetteDifferences,
+  validateReferenceImagePayload
 } from './src/utils/pixelforgeSpec.ts';
 
 dotenv.config();
@@ -233,30 +235,9 @@ app.post('/api/proxy/custom', async (req: Request, res: Response) => {
   }
 });
 
-// Diversity Guard memory: simpan 5 spec terakhir
+// Diversity Guard memory: simpan 5 spec terakhir dan prompt terakhir
 const recentSpecs: CharacterSpec[] = [];
-
-function countSilhouetteDifferences(a: CharacterSpec, b: CharacterSpec): number {
-  let diff = 0;
-  if (a.body !== b.body) diff++;
-  if (a.head !== b.head) diff++;
-  if (a.weapon !== b.weapon) diff++;
-  if (a.offhand !== b.offhand) diff++;
-  if (a.cape !== b.cape) diff++;
-  if (a.proportions?.height !== b.proportions?.height) diff++;
-  if (a.proportions?.headSize !== b.proportions?.headSize) diff++;
-  if (a.proportions?.torsoWidth !== b.proportions?.torsoWidth) diff++;
-  if (a.proportions?.legLength !== b.proportions?.legLength) diff++;
-  if (a.proportions?.armThickness !== b.proportions?.armThickness) diff++;
-
-  const traitsA = (a.traits || []).slice().sort().join(',');
-  const traitsB = (b.traits || []).slice().sort().join(',');
-  if (traitsA !== traitsB) diff++;
-
-  if (a.hairStyle !== b.hairStyle) diff++;
-
-  return diff;
-}
+let lastPrompt: string | null = null;
 
 function checkDiversity(candidate: CharacterSpec, history: CharacterSpec[]): { isDiverse: boolean; minDiff: number } {
   if (history.length === 0) return { isDiverse: true, minDiff: 99 };
@@ -284,42 +265,55 @@ app.post('/api/gemini/generate', async (req: Request, res: Response) => {
     });
   }
 
+  // Validasi server-side untuk referenceImage (Tahap 1b)
+  if (referenceImage) {
+    const imgValidation = validateReferenceImagePayload(referenceImage);
+    if (!imgValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        source: 'fallback',
+        reason: `Validasi gambar referensi gagal: ${imgValidation.error}`,
+        spec: null
+      });
+    }
+  }
+
   try {
     let referenceAnalysis: any = null;
 
     // Langkah A: Analisis Gambar Referensi (jika ada)
     if (referenceImage && referenceImage.data && referenceImage.mimeType) {
-      const validMimes = ['image/png', 'image/jpeg', 'image/webp'];
-      if (validMimes.includes(referenceImage.mimeType)) {
-        try {
-          const rawBase64 = String(referenceImage.data).replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
-          const visionResp = await gemini.models.generateContent({
-            model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
-            contents: [
-              {
-                inlineData: {
-                  mimeType: referenceImage.mimeType,
-                  data: rawBase64
-                }
-              },
-              {
-                text: 'Analisis gambar referensi karakter pixel art ini secara presisi sesuai responseSchema.'
+      try {
+        const rawBase64 = String(referenceImage.data).replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+        const visionResp = await gemini.models.generateContent({
+          model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
+          contents: [
+            {
+              inlineData: {
+                mimeType: referenceImage.mimeType,
+                data: rawBase64
               }
-            ],
-            config: {
-              systemInstruction: REFERENCE_ANALYSIS_PROMPT,
-              responseMimeType: 'application/json',
-              responseSchema: REFERENCE_ANALYSIS_SCHEMA as any,
-              temperature: 0.2
+            },
+            {
+              text: 'Analisis gambar referensi karakter pixel art ini secara presisi sesuai responseSchema.'
             }
-          });
+          ],
+          config: {
+            systemInstruction: REFERENCE_ANALYSIS_PROMPT,
+            responseMimeType: 'application/json',
+            responseSchema: REFERENCE_ANALYSIS_SCHEMA as any,
+            temperature: 0.2
+          }
+        });
 
-          const visionText = visionResp.text || '';
-          const cleanVisionJson = visionText.replace(/```json/g, '').replace(/```/g, '').trim();
-          referenceAnalysis = JSON.parse(cleanVisionJson);
-        } catch (visionErr: any) {
-          console.warn('Langkah A (Vision Analysis) gagal atau dilewati:', visionErr.message);
-        }
+        const visionText = visionResp.text || '';
+        const cleanVisionJson = visionText.replace(/```json/g, '').replace(/```/g, '').trim();
+        referenceAnalysis = JSON.parse(cleanVisionJson);
+
+        // Log JSON hasil analisis referensi di konsol server (Tahap 1d)
+        console.log('[Vision Reference Analysis Result]:\n', JSON.stringify(referenceAnalysis, null, 2));
+      } catch (visionErr: any) {
+        console.warn('Langkah A (Vision Analysis) gagal atau dilewati:', visionErr.message);
       }
     }
 
@@ -394,19 +388,24 @@ ATURAN PENTING:
       });
     }
 
-    // Diversity Guard: periksa perbedaan siluet dengan 5 spec terakhir
+    // Diversity Guard (Tahap 1a):
+    // HANYA aktif bila prompt BERBEDA dari request sebelumnya.
+    // Jika prompt sama persis (regenerate yang sama), jangan dipaksa berubah siluetnya.
+    const isDifferentPrompt = lastPrompt !== null && prompt.trim().toLowerCase() !== lastPrompt.trim().toLowerCase();
     const diversityCheck = checkDiversity(spec, recentSpecs);
-    if (!diversityCheck.isDiverse) {
+
+    if (isDifferentPrompt && !diversityCheck.isDiverse) {
       try {
         const diversityRetry = await gemini.models.generateContent({
           model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
           contents: `${promptForSpec}
 
-[PERINGATAN DIVERSITY GUARD]: Karakter yang dihasilkan terlalu mirip dengan karakter sesi sebelumnya (hanya beda ${diversityCheck.minDiff} aspek siluet).
-UBAH MINIMAL 3 ASPEK SILUET agar benar-benar unik! Variasikan:
-- proportions (height, headSize, torsoWidth, legLength, armThickness)
-- body (slim/normal/heavy), head, weapon, offhand, cape
-- traits (horns, pointy_ears, tail, hunch, wings, beard) atau accessories.`,
+[PERINGATAN DIVERSITY GUARD]: Prompt baru ini menghasilkan siluet yang terlalu mirip dengan karakter sesi sebelumnya (hanya beda ${diversityCheck.minDiff} aspek siluet).
+ATURAN RETRY DIVERSITY:
+1. PENTING: JANGAN mengubah elemen yang diminta secara EKSPLISIT oleh user di prompt (misal jika user minta pedang, tetap gunakan pedang; jika user minta jubah atau helm, pertahankan).
+2. UBAH MINIMAL 3 ASPEK SILUET LAINNYA yang tidak dikunci prompt, seperti:
+   - proportions: height (short/normal/tall), headSize (small/normal/big), torsoWidth (1/2/3), legLength, armThickness
+   - body (slim/normal/heavy), cape, traits (horns, pointy_ears, tail, hunch, wings, beard), atau accessories.`,
           config: {
             systemInstruction: SPRITE_SYSTEM_PROMPT,
             responseMimeType: 'application/json',
@@ -426,9 +425,10 @@ UBAH MINIMAL 3 ASPEK SILUET agar benar-benar unik! Variasikan:
       }
     }
 
-    // Simpan ke history recentSpecs (maks 5)
+    // Simpan ke history recentSpecs (maks 5) dan catat lastPrompt
     recentSpecs.push(spec);
     if (recentSpecs.length > 5) recentSpecs.shift();
+    lastPrompt = prompt;
 
     return res.json({
       success: true,
