@@ -818,9 +818,12 @@ export function drawCharacterCelFromSpec(
       setBodyPixel(cx, torsoY + dy, ramps.accent.base);
     }
   } else {
-    // 0. Jaket / Tunic: Central seam with accent buttons
+    // 0. Jaket / Tunic: Central seam with accent buttons and diagonal sword harness
     for (let dy = 0; dy < torsoH; dy++) {
       setBodyPixel(cx, torsoY + dy, ramps.secondary.base);
+      // Diagonal harness strap from right shoulder to left hip
+      const strapX = torsoX + torsoW - 1 - Math.round((dy / Math.max(1, torsoH - 1)) * (torsoW - 1));
+      setBodyPixel(strapX, torsoY + dy, ramps.secondary.shadow);
     }
     setBodyPixel(cx, torsoY + Math.round(1 * scale), ramps.accent.light);
     setBodyPixel(cx, torsoY + Math.round(3 * scale), ramps.accent.light);
@@ -907,15 +910,15 @@ export function drawCharacterCelFromSpec(
           }
         }
       }
-      // Crown spikes (top-right and center peaks)
-      const spikeH = Math.max(2, Math.round(3 * scale));
-      for (let s = 0; s < spikeH; s++) {
-        setBodyPixel(headX - 1, headY - headRInt - s - 1, ramps.hair.base);
-        setBodyPixel(headX + 1, headY - headRInt - s - 1, ramps.hair.base);
-        if (s < spikeH - 1) setBodyPixel(headX, headY - headRInt - s - 2, ramps.hair.light);
+      // Crown shaggy tufts (multiple natural messy peaks, not a tall spire)
+      const tuftLift = Math.max(1, Math.round(1.5 * scale));
+      for (let s = 1; s <= tuftLift; s++) {
+        setBodyPixel(headX - 2, headY - headRInt - s, ramps.hair.shadow);
+        setBodyPixel(headX, headY - headRInt - s, ramps.hair.light);
+        setBodyPixel(headX + 2, headY - headRInt - s, ramps.hair.base);
       }
-      setBodyPixel(headX + 2, headY - headRInt - 1, ramps.hair.shadow);
-      setBodyPixel(headX - 2, headY - headRInt - 1, ramps.hair.shadow);
+      setBodyPixel(headX - 1, headY - headRInt - 1, ramps.hair.base);
+      setBodyPixel(headX + 1, headY - headRInt - 1, ramps.hair.light);
 
       // Back spikes jutting leftwards behind head
       setBodyPixel(headX - headRInt - 1, headY - 2, ramps.hair.base);
@@ -1342,10 +1345,12 @@ export function generateProceduralCharacter(params: {
   // 3. Assemble Animations from Spec + Pose Table
   const animations: Record<string, SpriteFrame[]> = {};
 
-  // Build base single frame
-  const { body: baseBody, fx: baseFx } = drawCharacterCelFromSpec(spec, POSES.idle[0], 32);
-  const baseCel32 = postProcessFrame(baseBody, baseFx, spec, 30);
-  const basePixels = upscaleNearest(baseCel32, factor);
+  // Ground line calculated dynamically for resolution
+  const groundLine = resolution - Math.round(2 * (resolution / 32));
+
+  // Build base single frame natively at requested resolution
+  const { body: baseBody, fx: baseFx } = drawCharacterCelFromSpec(spec, POSES.idle[0], resolution);
+  const basePixels = postProcessFrame(baseBody, baseFx, spec, groundLine);
 
   if (!isAnimated) {
     // Static mode: 1 single cel frame
@@ -1353,11 +1358,10 @@ export function generateProceduralCharacter(params: {
       { id: 'idle-0', name: 'Pose Dasar', pixels: basePixels }
     ];
   } else {
-    // Animated mode: frame-by-frame cels
+    // Animated mode: frame-by-frame cels at native resolution
     animations.idle = POSES.idle.slice(0, 3).map((pose, i) => {
-      const { body, fx } = drawCharacterCelFromSpec(spec, pose, 32);
-      const cel32 = postProcessFrame(body, fx, spec, 30);
-      const finalGrid = upscaleNearest(cel32, factor);
+      const { body, fx } = drawCharacterCelFromSpec(spec, pose, resolution);
+      const finalGrid = postProcessFrame(body, fx, spec, groundLine);
       return {
         id: `idle-${i}`,
         name: `Idle ${i + 1}`,
@@ -1370,9 +1374,8 @@ export function generateProceduralCharacter(params: {
       const walkKeyIndices = [0, 2, 3, 5];
       animations.walk = walkKeyIndices.map((poseIdx, i) => {
         const pose = POSES.walk[poseIdx] || POSES.walk[0];
-        const { body, fx } = drawCharacterCelFromSpec(spec, pose, 32);
-        const cel32 = postProcessFrame(body, fx, spec, 30);
-        const finalGrid = upscaleNearest(cel32, factor);
+        const { body, fx } = drawCharacterCelFromSpec(spec, pose, resolution);
+        const finalGrid = postProcessFrame(body, fx, spec, groundLine);
         return {
           id: `walk-${i}`,
           name: `Walk ${i + 1}`,
@@ -1386,9 +1389,8 @@ export function generateProceduralCharacter(params: {
       const attackKeyIndices = [1, 3, 5];
       animations.attack = attackKeyIndices.map((poseIdx, i) => {
         const pose = POSES.attack[poseIdx] || POSES.attack[0];
-        const { body, fx } = drawCharacterCelFromSpec(spec, pose, 32);
-        const cel32 = postProcessFrame(body, fx, spec, 30);
-        const finalGrid = upscaleNearest(cel32, factor);
+        const { body, fx } = drawCharacterCelFromSpec(spec, pose, resolution);
+        const finalGrid = postProcessFrame(body, fx, spec, groundLine);
         return {
           id: `attack-${i}`,
           name: `Attack ${i + 1}`,

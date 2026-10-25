@@ -489,9 +489,9 @@ async function renderHeroReferenceSheet() {
     palette: {
       skin: '#fed7aa',
       hair: '#ea580c',
-      primary: '#16a34a',
-      secondary: '#2563eb',
-      accent: '#dc2626',
+      primary: '#854d0e', // brown leather tunic as in contoh_sprite_a9fa793f.jpg
+      secondary: '#2563eb', // blue denim pants
+      accent: '#dc2626', // red cowl scarf
       metal: '#e2e8f0',
     },
   };
