@@ -98,4 +98,10 @@ export interface GenerationRequest {
   requestedAnimations?: AnimationType[];
   providerConfig: AIProviderConfig;
   autoRefine: boolean;
+  referenceImage?: {
+    mimeType: string;
+    data: string;
+    previewUrl?: string;
+    name?: string;
+  };
 }

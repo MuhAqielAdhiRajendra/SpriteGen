@@ -32,6 +32,7 @@ import {
   PALETTES
 } from './utils/pixelEngine';
 import { Flame, Film, Download, ShieldCheck, ScrollText, LayoutGrid, SlidersHorizontal } from 'lucide-react';
+import type { ProcessedReferenceImage } from './utils/imageProcess';
 
 const DEFAULT_PROVIDER: AIProviderConfig = {
   id: 'gemini-default',
@@ -53,6 +54,7 @@ export default function App() {
   const [colorGrading, setColorGrading] = useState<ColorGradingMode>('vibrant');
   const [requestedAnimations, setRequestedAnimations] = useState<AnimationType[]>([]);
   const [autoRefine, setAutoRefine] = useState<boolean>(true);
+  const [referenceImage, setReferenceImage] = useState<ProcessedReferenceImage | null>(null);
 
   // Timeline & Playback States
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -196,7 +198,8 @@ export default function App() {
           direction,
           requestedAnimations,
           providerConfig: activeProvider,
-          autoRefine
+          autoRefine,
+          referenceImage: referenceImage || undefined
         },
         (step, partial) => {
           setLogs((prev) => {
@@ -698,6 +701,8 @@ export default function App() {
                 onGenerate={handleGenerate}
                 activeProvider={activeProvider}
                 onOpenSettings={() => setIsSettingsOpen(true)}
+                referenceImage={referenceImage}
+                setReferenceImage={setReferenceImage}
               />
 
               {/* Quick info strip under form */}

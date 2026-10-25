@@ -78,25 +78,45 @@ export async function executeSpriteGeneration(
   let resolvedDirection: CharacterDirection = direction;
   let validationNote = '';
 
+  let step1Status: 'success' | 'warning' = 'success';
+
   try {
     if (providerConfig.type === 'gemini') {
       const resp = await fetch('/api/gemini/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, resolution, paletteName, colorGrading })
+        body: JSON.stringify({
+          prompt,
+          resolution,
+          paletteName,
+          colorGrading,
+          referenceImage: request.referenceImage
+            ? {
+                mimeType: request.referenceImage.mimeType,
+                data: request.referenceImage.data,
+              }
+            : undefined
+        })
       }).catch(() => null);
 
       if (resp && resp.ok) {
         const data = await resp.json();
-        if (data.spec) {
-          const { spec: validSpec, errors } = validateSpec(data.spec);
+        if (data.source === 'gemini' && data.spec) {
+          const { spec: validSpec } = validateSpec(data.spec);
           if (validSpec) {
             resolvedSpec = validSpec;
-            validationNote = 'Output AI tervalidasi 100% sesuai schema enum CharacterSpec';
-          } else {
-            validationNote = `Validasi fallback: ${errors.join(', ')}`;
+            step1Status = 'success';
+            const refNote = data.usedReference ? ' (Referensi Gambar Aktif)' : '';
+            validationNote = `Output AI Gemini tervalidasi 100%${refNote}`;
           }
+        } else if (data.source === 'fallback' || !data.success) {
+          step1Status = 'warning';
+          const reason = data.reason || data.message || 'Layanan Gemini tidak aktif';
+          validationNote = `Mode offline: parser kata kunci aktif (alasan: ${reason})`;
         }
+      } else {
+        step1Status = 'warning';
+        validationNote = 'Mode offline: server AI tidak merespon (alasan: koneksi backend terputus)';
       }
     } else if (providerConfig.type === 'ollama') {
       const resp = await fetch('/api/proxy/ollama', {
@@ -118,14 +138,23 @@ export async function executeSpriteGeneration(
         try {
           const rawParsed = JSON.parse(data.response?.replace(/```json|```/g, '').trim() || '{}');
           const { spec: validSpec } = validateSpec(rawParsed);
-          if (validSpec) resolvedSpec = validSpec;
+          if (validSpec) {
+            resolvedSpec = validSpec;
+            step1Status = 'success';
+            validationNote = 'Output Ollama Local LLM tervalidasi';
+          }
         } catch {
-          // fallback procedural
+          step1Status = 'warning';
+          validationNote = 'Mode offline: respons Ollama bukan JSON spec yang valid';
         }
+      } else {
+        step1Status = 'warning';
+        validationNote = 'Mode offline: gagal menghubungi server Ollama';
       }
     }
   } catch (err: any) {
-    validationNote = `Procedural Art Director aktif: ${err?.message || 'Default'}`;
+    step1Status = 'warning';
+    validationNote = `Mode offline: parser kata kunci aktif (alasan: ${err?.message || 'Error eksekusi'})`;
   }
 
   // Ensure requested animations from prompt or options are reflected
@@ -140,13 +169,13 @@ export async function executeSpriteGeneration(
   emitStep({
     id: 'step-1-parse',
     phase: 'parse',
-    title: 'CharacterSpec AI Terbentuk & Tervalidasi',
+    title: step1Status === 'warning' ? 'Mode Offline: Parser Kata Kunci Aktif' : 'CharacterSpec AI Terbentuk & Tervalidasi',
     description: `Archetype: [${resolvedSpec.archetype}], Body: [${resolvedSpec.body}], Head: [${resolvedSpec.head}], Weapon: [${resolvedSpec.weapon}], Offhand: [${resolvedSpec.offhand}], Cape: [${resolvedSpec.cape}]. ${validationNote}`,
     timestamp: new Date().toLocaleTimeString('id-ID'),
     durationMs: Date.now() - step1Start,
-    status: 'success',
+    status: step1Status,
     tokenCount: Math.round(prompt.length / 3) + 40,
-    details: { spec: resolvedSpec, direction: resolvedDirection }
+    details: { spec: resolvedSpec, direction: resolvedDirection, usedReference: !!request.referenceImage }
   });
 
   // STEP 2: Color Ramp Shading & Palette Construction

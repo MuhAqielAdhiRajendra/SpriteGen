@@ -1,6 +1,6 @@
 // pixelforgeSpec.ts
-// Pipeline: prompt -> AI hanya mengisi CharacterSpec (enum terbatas) -> validasi + retry
-//           -> kode menyusun frame dari spec + pose -> post-process -> validasi antar frame.
+// Pipeline: prompt (+ referensi gambar) -> AI Art Director mengisi CharacterSpec lengkap
+//           -> validasi + diversity guard -> kode merender frame berbasis layout -> post-process.
 
 // ============================================================
 // 1. ENUM & TIPE SPEC (AI hanya boleh memilih dari sini)
@@ -13,6 +13,14 @@ export const OFFHANDS = ['shield', 'none'] as const;
 export const CAPES = ['none', 'short', 'long'] as const;
 export const ANIMS = ['idle', 'walk', 'attack'] as const;
 
+// New modular slot enums for silhouette diversity
+export const HEIGHTS = ['short', 'normal', 'tall'] as const;
+export const HEAD_SIZES = ['small', 'normal', 'big'] as const;
+export const LEG_LENGTHS = ['short', 'normal', 'long'] as const;
+export const TRAITS = ['horns', 'pointy_ears', 'tail', 'hunch', 'wings', 'beard', 'none'] as const;
+export const ACCESSORIES = ['scarf', 'belt', 'gloves', 'boots', 'shoulder_pad', 'backpack', 'quiver'] as const;
+export const HAIR_STYLES = ['none', 'short', 'spiky', 'long'] as const;
+
 export type Archetype = (typeof ARCHETYPES)[number];
 export type Anim = (typeof ANIMS)[number];
 export type BodyType = (typeof BODIES)[number];
@@ -20,6 +28,28 @@ export type HeadType = (typeof HEADS)[number];
 export type WeaponType = (typeof WEAPONS)[number];
 export type OffhandType = (typeof OFFHANDS)[number];
 export type CapeType = (typeof CAPES)[number];
+
+export type HeightType = (typeof HEIGHTS)[number];
+export type HeadSizeType = (typeof HEAD_SIZES)[number];
+export type LegLengthType = (typeof LEG_LENGTHS)[number];
+export type CharacterTrait = (typeof TRAITS)[number];
+export type CharacterAccessory = (typeof ACCESSORIES)[number];
+export type HairStyle = (typeof HAIR_STYLES)[number];
+
+export interface CharacterProportions {
+  height: HeightType;
+  headSize: HeadSizeType;
+  torsoWidth: 1 | 2 | 3;
+  legLength: LegLengthType;
+  armThickness: 1 | 2;
+}
+
+export interface CharacterVariants {
+  hair: number;   // 0..4
+  head: number;   // 0..3
+  torso: number;  // 0..3
+  weapon: number; // 0..3
+}
 
 export interface CharacterSpec {
   name: string;
@@ -38,9 +68,30 @@ export interface CharacterSpec {
     metal: string;
   };
   animations: Anim[];
+  // Optional modular diversity fields
+  proportions?: CharacterProportions;
+  variants?: CharacterVariants;
+  traits?: CharacterTrait[];
+  accessories?: CharacterAccessory[];
+  hairStyle?: HairStyle;
 }
 
-// JSON schema untuk structured output (Gemini responseSchema / response_format)
+export const DEFAULT_PROPORTIONS: CharacterProportions = {
+  height: 'normal',
+  headSize: 'normal',
+  torsoWidth: 2,
+  legLength: 'normal',
+  armThickness: 1,
+};
+
+export const DEFAULT_VARIANTS: CharacterVariants = {
+  hair: 0,
+  head: 0,
+  torso: 0,
+  weapon: 0,
+};
+
+// JSON schema untuk structured output CharacterSpec (Gemini responseSchema)
 export const SPEC_JSON_SCHEMA = {
   type: 'object',
   required: ['name', 'archetype', 'body', 'head', 'weapon', 'offhand', 'cape', 'palette', 'animations'],
@@ -65,49 +116,164 @@ export const SPEC_JSON_SCHEMA = {
       },
     },
     animations: { type: 'array', items: { type: 'string', enum: [...ANIMS] } },
+    proportions: {
+      type: 'object',
+      properties: {
+        height: { type: 'string', enum: [...HEIGHTS] },
+        headSize: { type: 'string', enum: [...HEAD_SIZES] },
+        torsoWidth: { type: 'integer', enum: [1, 2, 3] },
+        legLength: { type: 'string', enum: [...LEG_LENGTHS] },
+        armThickness: { type: 'integer', enum: [1, 2] },
+      },
+    },
+    variants: {
+      type: 'object',
+      properties: {
+        hair: { type: 'integer', minimum: 0, maximum: 4 },
+        head: { type: 'integer', minimum: 0, maximum: 3 },
+        torso: { type: 'integer', minimum: 0, maximum: 3 },
+        weapon: { type: 'integer', minimum: 0, maximum: 3 },
+      },
+    },
+    traits: {
+      type: 'array',
+      items: { type: 'string', enum: [...TRAITS] },
+    },
+    accessories: {
+      type: 'array',
+      items: { type: 'string', enum: [...ACCESSORIES] },
+    },
+    hairStyle: {
+      type: 'string',
+      enum: [...HAIR_STYLES],
+    },
   },
 } as const;
+
+// Schema untuk Analisis Gambar Referensi (Langkah A)
+export const REFERENCE_ANALYSIS_SCHEMA = {
+  type: 'object',
+  required: [
+    'headToBodyRatio',
+    'bodyBuild',
+    'height',
+    'headSize',
+    'hairStyle',
+    'hairColor',
+    'skinColor',
+    'outfitColors',
+    'accessories',
+    'weaponType',
+    'traits',
+    'styleNotes',
+  ],
+  properties: {
+    headToBodyRatio: { type: 'number', description: 'Rasio tinggi kepala terhadap tinggi total karakter (misal 0.22 - 0.38)' },
+    bodyBuild: { type: 'string', enum: ['slim', 'normal', 'heavy'] },
+    height: { type: 'string', enum: ['short', 'normal', 'tall'] },
+    headSize: { type: 'string', enum: ['small', 'normal', 'big'] },
+    hairStyle: { type: 'string', enum: ['none', 'short', 'spiky', 'long', 'hood', 'helmet'] },
+    hairColor: { type: 'string', description: 'Warna rambut heksadesimal 6 digit (#RRGGBB)' },
+    skinColor: { type: 'string', description: 'Warna kulit heksadesimal 6 digit (#RRGGBB)' },
+    outfitColors: {
+      type: 'object',
+      required: ['primary', 'secondary', 'accent', 'metal'],
+      properties: {
+        primary: { type: 'string' },
+        secondary: { type: 'string' },
+        accent: { type: 'string' },
+        metal: { type: 'string' },
+      },
+    },
+    accessories: {
+      type: 'array',
+      items: { type: 'string', enum: ['scarf', 'belt', 'cape', 'gloves', 'boots', 'shoulder_pad', 'backpack', 'quiver'] },
+    },
+    weaponType: { type: 'string', enum: ['sword', 'axe', 'staff', 'bow', 'dagger', 'none'] },
+    traits: {
+      type: 'array',
+      items: { type: 'string', enum: ['horns', 'pointy_ears', 'tail', 'hunch', 'wings', 'beard', 'none'] },
+    },
+    styleNotes: { type: 'string', description: 'Catatan singkat ciri visual khusus' },
+  },
+} as const;
+
+export const REFERENCE_ANALYSIS_PROMPT = `
+Kamu adalah MASTER ART DIRECTOR pixel art.
+Tugasmu adalah menganalisis gambar referensi karakter/sprite pixel art yang diberikan secara presisi dan objektif.
+Ekstrak siluet proporsi fisik, gaya rambut, warna pakaian, aksesori dominan, jenis senjata, dan ciri khas visual (traits).
+Balas HANYA objek JSON sesuai responseSchema.
+Aturan:
+- Semua warna dalam format hex 6 digit (#RRGGBB).
+- headToBodyRatio adalah desimal (misal 0.32 untuk kepala besar/chibi, 0.22 untuk ksatria jangkung).
+- styleNotes berisi ringkasan singkat dalam 1-2 kalimat bahasa Indonesia mengenai ciri khas siluet karakter ini.
+`.trim();
 
 // ============================================================
 // 2. PROMPT UNTUK AI (pakai sebagai systemInstruction di /api/gemini/generate)
 // ============================================================
 export const SPRITE_SYSTEM_PROMPT = `
-Kamu adalah ART DIRECTOR untuk generator sprite pixel art 2D side-view bergaya retro RPG cel-shaded.
-Tugasmu BUKAN menggambar pixel. Tugasmu hanya memilih komponen karakter dan palet warna.
-Kode di sisi game yang akan menggambar pixel dan animasinya, jadi jangan menulis koordinat atau angka pixel.
+Kamu adalah ART DIRECTOR SENIOR untuk generator sprite pixel art 2D side-view bergaya retro RPG cel-shaded.
+Tugasmu BUKAN menggambar pixel. Tugasmu hanya memilih komponen karakter, proporsi anatomis, varian visual, aksesori, dan palet warna.
+Kode render di sisi game yang akan menggambar pixel dan animasinya, jadi jangan menulis koordinat atau angka pixel acak.
 
 ATURAN OUTPUT
-1. Balas HANYA dengan satu objek JSON valid sesuai schema. Tanpa markdown, tanpa penjelasan.
-2. Semua field bertipe enum WAJIB memakai nilai persis dari daftar yang diizinkan. Jangan membuat nilai baru.
+1. Balas HANYA dengan satu objek JSON valid sesuai schema CharacterSpec. Tanpa markdown, tanpa penjelasan teks.
+2. Semua field bertipe enum WAJIB memakai nilai persis dari daftar yang diizinkan:
    - archetype: fighter | archer | mage | goblin | zombie | npc
    - body: slim | normal | heavy
    - head: bare | hood | helmet_open | helmet_closed | horned
    - weapon: sword | axe | staff | bow | dagger | none
    - offhand: shield | none
    - cape: none | short | long
-   - animations: pilih dari idle | walk | attack (selalu sertakan ketiganya kecuali diminta lain)
-3. Jika prompt user meminta sesuatu yang tidak ada di daftar (misal "tombak"), pilih padanan terdekat
-   (tombak -> staff) dan tetap valid. Jangan menolak.
+   - hairStyle: none | short | spiky | long
+   - proportions:
+     * height: short | normal | tall
+     * headSize: small | normal | big
+     * torsoWidth: 1 | 2 | 3
+     * legLength: short | normal | long
+     * armThickness: 1 | 2
+   - variants: hair (0..4), head (0..3), torso (0..3), weapon (0..3)
+   - traits: horns | pointy_ears | tail | hunch | wings | beard | none (maks 2)
+   - accessories: scarf | belt | gloves | boots | shoulder_pad | backpack | quiver (maks 3)
+   - animations: selalu sertakan ["idle", "walk", "attack"] kecuali diminta lain
 
-ATURAN PEMILIHAN
-- Konsisten dengan archetype: fighter -> sword/axe + (sering) shield; archer -> bow, body slim;
-  mage -> staff, hood/bare, cape; goblin -> dagger/none, body slim, kulit hijau; zombie -> weapon none/dagger, kulit pucat kehijauan.
-- Siluet harus mudah dibaca di 32x32: jangan menumpuk terlalu banyak aksesori (maks 3 ciri menonjol).
-- body "heavy" cocok dengan zirah tebal/shield, "slim" untuk archer/mage/goblin.
+ATURAN REFERENSI vs PROMPT
+- REFERENSI GAMBAR = ACUAN BENTUK, PROPORSI, CIRI KHAS AKSESORI, DAN GAYA VISUAL.
+- PROMPT PENGGUNA = ACUAN ISI CERITA & REVISI SPESIFIK.
+- Jika ada pertentangan (misal: referensi berbaju hijau tapi prompt minta jubah hitam, atau referensi bawa pedang tapi prompt minta panah), MAKA PERINTAH PROMPT PENGGUNA MENANG dan menggantikan bagian tersebut.
 
 ATURAN PALET (semua format hex 6 digit, contoh #3b82f6)
 - Tepat 6 warna: skin, hair, primary, secondary, accent, metal. JANGAN tentukan warna outline (diurus kode).
-- primary = warna dominan pakaian/zirah; secondary = warna pendamping yang kontras sedang;
-  accent = satu warna kecil mencolok (permata, sihir, sabuk); metal = abu/perak/emas untuk senjata & pelat.
-- Jaga kontras: primary dan secondary harus beda luminans jelas. Hindari warna terlalu jenuh sekaligus (maks 1 warna neon).
-- skin harus warna kulit/makhluk yang masuk akal, bukan sama dengan primary.
+- primary = warna dominan pakaian/zirah; secondary = warna pendamping dengan kontras luminans jelas (>0.06);
+  accent = satu warna kecil mencolok (permata, syal, sihir, sabuk); metal = abu/perak/emas untuk senjata & pelat.
+- skin harus warna kulit/makhluk yang masuk akal dan kontras dengan pakaian.
 
-CONTOH
-User: "ksatria zirah biru dengan pedang dan perisai, jubah merah pendek"
-{"name":"Ksatria Biru","archetype":"fighter","body":"heavy","head":"helmet_closed","weapon":"sword","offhand":"shield","cape":"short","palette":{"skin":"#f2c9a0","hair":"#5b3a29","primary":"#3b6fd8","secondary":"#2a4a9c","accent":"#e5484d","metal":"#c9d1d9"},"animations":["idle","walk","attack"]}
+6 CONTOH DENGAN SILUET & PROPORSI YANG SANGAT BERAGAM:
 
-User: "goblin hijau kecil bawa belati"
-{"name":"Goblin","archetype":"goblin","body":"slim","head":"bare","weapon":"dagger","offhand":"none","cape":"none","palette":{"skin":"#6abf4b","hair":"#3a2f1f","primary":"#8b5e34","secondary":"#5a3d22","accent":"#f5c542","metal":"#aab4be"},"animations":["idle","walk","attack"]}
+Contoh 1 (Ksatria Heavy-Tall):
+User: "ksatria zirah pelat baja berat jangkung dengan pedang bermata ganda dan perisai perak"
+{"name":"Ksatria Baja","archetype":"fighter","body":"heavy","head":"helmet_closed","weapon":"sword","offhand":"shield","cape":"short","proportions":{"height":"tall","headSize":"small","torsoWidth":3,"legLength":"long","armThickness":2},"variants":{"hair":0,"head":1,"torso":2,"weapon":1},"traits":["none"],"accessories":["shoulder_pad","boots","belt"],"hairStyle":"none","palette":{"skin":"#f2c9a0","hair":"#2b2b2b","primary":"#475569","secondary":"#1e293b","accent":"#38bdf8","metal":"#e2e8f0"},"animations":["idle","walk","attack"]}
+
+Contoh 2 (Goblin Short-Big-Head):
+User: "goblin kerdil licik berkepala besar dengan telinga runcing membawa belati racun"
+{"name":"Goblin Kerdil","archetype":"goblin","body":"slim","head":"bare","weapon":"dagger","offhand":"none","cape":"none","proportions":{"height":"short","headSize":"big","torsoWidth":1,"legLength":"short","armThickness":1},"variants":{"hair":1,"head":0,"torso":0,"weapon":0},"traits":["pointy_ears"],"accessories":["belt"],"hairStyle":"short","palette":{"skin":"#65a30d","hair":"#1c1917","primary":"#854d0e","secondary":"#533107","accent":"#eab308","metal":"#94a3b8"},"animations":["idle","walk","attack"]}
+
+Contoh 3 (Penyihir Tall-Slim):
+User: "penyihir agung jangkung ramping bertudung mistis dan jubah panjang ungu berkilau"
+{"name":"Penyihir Agung","archetype":"mage","body":"slim","head":"hood","weapon":"staff","offhand":"none","cape":"long","proportions":{"height":"tall","headSize":"normal","torsoWidth":1,"legLength":"long","armThickness":1},"variants":{"hair":0,"head":2,"torso":3,"weapon":2},"traits":["none"],"accessories":["cape"],"hairStyle":"none","palette":{"skin":"#fed7aa","hair":"#e2e8f0","primary":"#7e22ce","secondary":"#3b0764","accent":"#38bdf8","metal":"#facc15"},"animations":["idle","walk","attack"]}
+
+Contoh 4 (Pemanah Slim dengan Quiver):
+User: "pemanah lincah elf dengan busur kayu dan tabung panah di punggung"
+{"name":"Pemanah Hutan","archetype":"archer","body":"slim","head":"bare","weapon":"bow","offhand":"none","cape":"none","proportions":{"height":"normal","headSize":"normal","torsoWidth":1,"legLength":"normal","armThickness":1},"variants":{"hair":2,"head":0,"torso":1,"weapon":3},"traits":["pointy_ears"],"accessories":["quiver","boots"],"hairStyle":"long","palette":{"skin":"#ffedd5","hair":"#facc15","primary":"#15803d","secondary":"#14532d","accent":"#ea580c","metal":"#78716c"},"animations":["idle","walk","attack"]}
+
+Contoh 5 (Zombie Hunch tanpa senjata):
+User: "mayat hidup bungkuk merangkak tubuh pucat mengerikan tangan kosong"
+{"name":"Zombie Bungkuk","archetype":"zombie","body":"normal","head":"bare","weapon":"none","offhand":"none","cape":"none","proportions":{"height":"short","headSize":"normal","torsoWidth":2,"legLength":"short","armThickness":1},"variants":{"hair":3,"head":0,"torso":0,"weapon":0},"traits":["hunch"],"accessories":[],"hairStyle":"short","palette":{"skin":"#86efac","hair":"#334155","primary":"#475569","secondary":"#1e293b","accent":"#ef4444","metal":"#64748b"},"animations":["idle","walk","attack"]}
+
+Contoh 6 (Pahlawan Rambut Spiky + Scarf + Belt - sesuai referensi):
+User: "pemuda petualang rambut jabrik oranye dengan syal merah melingkar di leher dan sabuk kulit bertualang memegang pedang perak"
+{"name":"Petualang Jingga","archetype":"fighter","body":"normal","head":"bare","weapon":"sword","offhand":"none","cape":"none","proportions":{"height":"normal","headSize":"normal","torsoWidth":2,"legLength":"normal","armThickness":1},"variants":{"hair":4,"head":0,"torso":1,"weapon":0},"traits":["none"],"accessories":["scarf","belt","boots"],"hairStyle":"spiky","palette":{"skin":"#fed7aa","hair":"#ea580c","primary":"#16a34a","secondary":"#854d0e","accent":"#dc2626","metal":"#e2e8f0"},"animations":["idle","walk","attack"]}
 `.trim();
 
 // Prompt opsional untuk kritik visual (kirim sprite sheet PNG ke model vision)
@@ -148,8 +314,48 @@ export function validateSpec(raw: unknown): { spec?: CharacterSpec; errors: stri
       errors.push('primary dan secondary terlalu mirip luminansnya, beri kontras lebih jelas');
     }
   }
+
+  // Gracefully validate optional diversity fields with fallback defaults (never reject valid old spec)
+  const proportions: CharacterProportions = {
+    height: oneOf(HEIGHTS, r.proportions?.height) ? r.proportions.height : DEFAULT_PROPORTIONS.height,
+    headSize: oneOf(HEAD_SIZES, r.proportions?.headSize) ? r.proportions.headSize : DEFAULT_PROPORTIONS.headSize,
+    torsoWidth: [1, 2, 3].includes(Number(r.proportions?.torsoWidth)) ? (Number(r.proportions.torsoWidth) as 1 | 2 | 3) : DEFAULT_PROPORTIONS.torsoWidth,
+    legLength: oneOf(LEG_LENGTHS, r.proportions?.legLength) ? r.proportions.legLength : DEFAULT_PROPORTIONS.legLength,
+    armThickness: [1, 2].includes(Number(r.proportions?.armThickness)) ? (Number(r.proportions.armThickness) as 1 | 2) : DEFAULT_PROPORTIONS.armThickness,
+  };
+
+  const variants: CharacterVariants = {
+    hair: typeof r.variants?.hair === 'number' && r.variants.hair >= 0 && r.variants.hair <= 4 ? Math.floor(r.variants.hair) : 0,
+    head: typeof r.variants?.head === 'number' && r.variants.head >= 0 && r.variants.head <= 3 ? Math.floor(r.variants.head) : 0,
+    torso: typeof r.variants?.torso === 'number' && r.variants.torso >= 0 && r.variants.torso <= 3 ? Math.floor(r.variants.torso) : 0,
+    weapon: typeof r.variants?.weapon === 'number' && r.variants.weapon >= 0 && r.variants.weapon <= 3 ? Math.floor(r.variants.weapon) : 0,
+  };
+
+  const validTraits = Array.isArray(r.traits)
+    ? (r.traits.filter((t: unknown) => oneOf(TRAITS, t)) as CharacterTrait[]).slice(0, 2)
+    : [];
+  const traits: CharacterTrait[] = validTraits.length > 0 ? validTraits : ['none'];
+
+  const validAccessories = Array.isArray(r.accessories)
+    ? (r.accessories.filter((a: unknown) => oneOf(ACCESSORIES, a)) as CharacterAccessory[]).slice(0, 3)
+    : [];
+
+  const hairStyle: HairStyle = oneOf(HAIR_STYLES, r.hairStyle) ? r.hairStyle : 'short';
+
   if (errors.length) return { errors };
-  return { spec: { ...r, name: String(r.name ?? 'Karakter').slice(0, 24) } as CharacterSpec, errors };
+
+  return {
+    spec: {
+      ...r,
+      name: String(r.name ?? 'Karakter').slice(0, 24),
+      proportions,
+      variants,
+      traits,
+      accessories: validAccessories,
+      hairStyle,
+    } as CharacterSpec,
+    errors,
+  };
 }
 
 /** callModel: fungsi yang memanggil model dan mengembalikan teks JSON mentah. */
@@ -190,6 +396,11 @@ export const DEFAULT_SPEC: CharacterSpec = {
     metal: '#c9d1d9',
   },
   animations: ['idle', 'walk', 'attack'],
+  proportions: { ...DEFAULT_PROPORTIONS },
+  variants: { ...DEFAULT_VARIANTS },
+  traits: ['none'],
+  accessories: [],
+  hairStyle: 'short',
 };
 
 // ============================================================

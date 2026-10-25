@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   CharacterDirection,
   SpriteResolution,
@@ -7,7 +7,8 @@ import {
   ColorGradingMode
 } from '../types/sprite';
 import { PALETTES } from '../utils/pixelEngine';
-import { Hammer, Sliders, Shield, Flame, Check } from 'lucide-react';
+import { Hammer, Sliders, Shield, Flame, Check, Image as ImageIcon, Upload, X as CloseIcon, Loader2 } from 'lucide-react';
+import { processImageFile, loadPresetImage, ProcessedReferenceImage } from '../utils/imageProcess';
 
 interface PromptFormProps {
   prompt: string;
@@ -28,6 +29,8 @@ interface PromptFormProps {
   onGenerate: () => void;
   activeProvider: AIProviderConfig;
   onOpenSettings: () => void;
+  referenceImage?: ProcessedReferenceImage | null;
+  setReferenceImage?: (val: ProcessedReferenceImage | null) => void;
 }
 
 const FORGE_SUGGESTIONS = [
@@ -72,9 +75,14 @@ export const PromptForm: React.FC<PromptFormProps> = ({
   isGenerating,
   onGenerate,
   activeProvider,
-  onOpenSettings
+  onOpenSettings,
+  referenceImage = null,
+  setReferenceImage
 }) => {
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
+  const [isProcessingImg, setIsProcessingImg] = useState(false);
+  const [imgError, setImgError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Rotate loading texts every 800ms
   useEffect(() => {
@@ -98,6 +106,36 @@ export const PromptForm: React.FC<PromptFormProps> = ({
       setRequestedAnimations(requestedAnimations.filter((a) => a !== anim));
     } else {
       setRequestedAnimations([...requestedAnimations, anim]);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !setReferenceImage) return;
+    setIsProcessingImg(true);
+    setImgError(null);
+    try {
+      const processed = await processImageFile(file);
+      setReferenceImage(processed);
+    } catch (err: any) {
+      setImgError(err.message || 'Gagal memproses gambar referensi.');
+    } finally {
+      setIsProcessingImg(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleSelectPresetRef = async (url: string, name: string) => {
+    if (!setReferenceImage) return;
+    setIsProcessingImg(true);
+    setImgError(null);
+    try {
+      const processed = await loadPresetImage(url, name);
+      setReferenceImage(processed);
+    } catch (err: any) {
+      setImgError(err.message || 'Gagal memuat preset gambar.');
+    } finally {
+      setIsProcessingImg(false);
     }
   };
 
@@ -156,6 +194,100 @@ export const PromptForm: React.FC<PromptFormProps> = ({
             </button>
           ))}
         </div>
+      </div>
+
+      {/* 1.5. Reference Image Section (Tahap 1) */}
+      <div className="space-y-2 pt-1 border-t border-[#44403c]">
+        <div className="flex items-center justify-between">
+          <label className="font-pixel text-xs text-[#e7e5e4] flex items-center gap-1.5">
+            <ImageIcon className="w-3.5 h-3.5 text-[#fbbf24]" />
+            <span>Referensi Gambar (Opsional):</span>
+          </label>
+          <span className="text-[9px] font-tech text-[#a8a29e]">
+            Maks 768px • PNG/JPG/WebP
+          </span>
+        </div>
+
+        {referenceImage ? (
+          <div className="flex items-center justify-between p-2 bg-[#141211] border-2 border-[#ea580c] shadow-[2px_2px_0_#000]">
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <img
+                src={referenceImage.previewUrl}
+                alt="Referensi Terpilih"
+                className="w-12 h-12 object-contain bg-[#1c1917] border border-[#44403c] shrink-0 pixelated"
+              />
+              <div className="flex flex-col min-w-0">
+                <span className="font-pixel text-[11px] text-[#fbbf24] truncate">
+                  {referenceImage.name}
+                </span>
+                <span className="text-[10px] font-tech text-[#a8a29e]">
+                  Terkonversi JPEG &lt; 2MB • Aktif sebagai acuan siluet & gaya
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setReferenceImage && setReferenceImage(null)}
+              disabled={isGenerating}
+              className="p-1 text-[#a8a29e] hover:text-[#ef4444] border border-[#44403c] hover:border-[#ef4444] bg-[#1c1917] shrink-0"
+              title="Hapus referensi gambar"
+            >
+              <CloseIcon className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isGenerating || isProcessingImg}
+                className="forge-btn-secondary px-2.5 py-1 text-xs font-pixel flex items-center gap-1.5"
+              >
+                {isProcessingImg ? (
+                  <Loader2 className="w-3 h-3 animate-spin text-[#fbbf24]" />
+                ) : (
+                  <Upload className="w-3 h-3 text-[#ea580c]" />
+                )}
+                <span>Unggah Gambar</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectPresetRef('/assets/aistudio/contoh_sprite_a9fa793f.jpg', 'contoh_sprite_hero.jpg')}
+                disabled={isGenerating || isProcessingImg}
+                className="px-2 py-1 text-[10px] font-tech bg-[#1c1917] hover:bg-[#383330] text-[#a8a29e] hover:text-[#e7e5e4] border border-[#44403c] transition-colors"
+                title="Gunakan karakter petualang rambut oranye sebagai acuan"
+              >
+                Preset: Hero Oranye
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectPresetRef('/character_spritesheet_3x4.jpg', 'character_spritesheet_3x4.jpg')}
+                disabled={isGenerating || isProcessingImg}
+                className="px-2 py-1 text-[10px] font-tech bg-[#1c1917] hover:bg-[#383330] text-[#a8a29e] hover:text-[#e7e5e4] border border-[#44403c] transition-colors"
+                title="Gunakan lembar 3x4 sebagai acuan"
+              >
+                Preset: Sheet 3×4
+              </button>
+            </div>
+
+            {imgError && (
+              <p className="text-[11px] font-tech text-[#ef4444]">
+                ⚠️ {imgError}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 2. Resolution Selection (32, 64, 128) */}

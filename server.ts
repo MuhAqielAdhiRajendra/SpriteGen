@@ -8,8 +8,11 @@ import { GoogleGenAI } from '@google/genai';
 import {
   SPRITE_SYSTEM_PROMPT,
   SPEC_JSON_SCHEMA,
+  REFERENCE_ANALYSIS_SCHEMA,
+  REFERENCE_ANALYSIS_PROMPT,
   validateSpec,
-  DEFAULT_SPEC
+  DEFAULT_SPEC,
+  CharacterSpec
 } from './src/utils/pixelforgeSpec.ts';
 
 dotenv.config();
@@ -230,67 +233,218 @@ app.post('/api/proxy/custom', async (req: Request, res: Response) => {
   }
 });
 
-// 4. Gemini Generation & Art Director Endpoint (CharacterSpec with Validation + Retry)
+// Diversity Guard memory: simpan 5 spec terakhir
+const recentSpecs: CharacterSpec[] = [];
+
+function countSilhouetteDifferences(a: CharacterSpec, b: CharacterSpec): number {
+  let diff = 0;
+  if (a.body !== b.body) diff++;
+  if (a.head !== b.head) diff++;
+  if (a.weapon !== b.weapon) diff++;
+  if (a.offhand !== b.offhand) diff++;
+  if (a.cape !== b.cape) diff++;
+  if (a.proportions?.height !== b.proportions?.height) diff++;
+  if (a.proportions?.headSize !== b.proportions?.headSize) diff++;
+  if (a.proportions?.torsoWidth !== b.proportions?.torsoWidth) diff++;
+  if (a.proportions?.legLength !== b.proportions?.legLength) diff++;
+  if (a.proportions?.armThickness !== b.proportions?.armThickness) diff++;
+
+  const traitsA = (a.traits || []).slice().sort().join(',');
+  const traitsB = (b.traits || []).slice().sort().join(',');
+  if (traitsA !== traitsB) diff++;
+
+  if (a.hairStyle !== b.hairStyle) diff++;
+
+  return diff;
+}
+
+function checkDiversity(candidate: CharacterSpec, history: CharacterSpec[]): { isDiverse: boolean; minDiff: number } {
+  if (history.length === 0) return { isDiverse: true, minDiff: 99 };
+  let minDiff = 99;
+  for (const prev of history) {
+    const diff = countSilhouetteDifferences(candidate, prev);
+    if (diff < minDiff) {
+      minDiff = diff;
+    }
+  }
+  return { isDiverse: minDiff >= 3, minDiff };
+}
+
+// 4. Gemini Generation & Art Director Endpoint (2-Step Vision + Spec + Diversity Guard)
 app.post('/api/gemini/generate', async (req: Request, res: Response) => {
-  const { prompt } = req.body;
+  const { prompt, referenceImage } = req.body;
   const gemini = getGeminiClient();
 
   if (!gemini) {
     return res.json({
       success: false,
-      useFallback: true,
-      message: 'GEMINI_API_KEY tidak tersedia di backend server. Menggunakan neural procedural parser.'
+      source: 'fallback',
+      reason: 'GEMINI_API_KEY tidak dikonfigurasi di server environment (.env)',
+      spec: null
     });
   }
 
   try {
+    let referenceAnalysis: any = null;
+
+    // Langkah A: Analisis Gambar Referensi (jika ada)
+    if (referenceImage && referenceImage.data && referenceImage.mimeType) {
+      const validMimes = ['image/png', 'image/jpeg', 'image/webp'];
+      if (validMimes.includes(referenceImage.mimeType)) {
+        try {
+          const rawBase64 = String(referenceImage.data).replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+          const visionResp = await gemini.models.generateContent({
+            model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
+            contents: [
+              {
+                inlineData: {
+                  mimeType: referenceImage.mimeType,
+                  data: rawBase64
+                }
+              },
+              {
+                text: 'Analisis gambar referensi karakter pixel art ini secara presisi sesuai responseSchema.'
+              }
+            ],
+            config: {
+              systemInstruction: REFERENCE_ANALYSIS_PROMPT,
+              responseMimeType: 'application/json',
+              responseSchema: REFERENCE_ANALYSIS_SCHEMA as any,
+              temperature: 0.2
+            }
+          });
+
+          const visionText = visionResp.text || '';
+          const cleanVisionJson = visionText.replace(/```json/g, '').replace(/```/g, '').trim();
+          referenceAnalysis = JSON.parse(cleanVisionJson);
+        } catch (visionErr: any) {
+          console.warn('Langkah A (Vision Analysis) gagal atau dilewati:', visionErr.message);
+        }
+      }
+    }
+
+    // Langkah B: Pembuatan CharacterSpec Lengkap
+    let promptForSpec = prompt;
+    if (referenceAnalysis) {
+      promptForSpec = `${prompt}
+
+[DATA ANALISIS REFERENSI VISUAL]:
+${JSON.stringify(referenceAnalysis, null, 2)}
+
+ATURAN PENTING:
+1. Jadikan hasil analisis referensi visual di atas sebagai acuan bentuk anatomi, proporsi, gaya rambut, pakaian, dan palet warna.
+2. Jika ada instruksi user di atas yang secara spesifik meminta perbedaan (misal warna lain atau senjata lain), perintah teks user MENANG dan menggantikan bagian referensi tersebut.`;
+    }
+
     const response = await gemini.models.generateContent({
       model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
-      contents: prompt,
+      contents: promptForSpec,
       config: {
         systemInstruction: SPRITE_SYSTEM_PROMPT,
         responseMimeType: 'application/json',
         responseSchema: SPEC_JSON_SCHEMA as any,
-        temperature: 0.3
+        temperature: 0.8
       }
     });
 
     const text = response.text || '';
     const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    const parsed = JSON.parse(cleanJson);
-    const { spec, errors } = validateSpec(parsed);
-
-    if (spec) {
-      return res.json({ success: true, spec, validationErrors: [] });
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleanJson);
+    } catch {
+      return res.json({
+        success: false,
+        source: 'fallback',
+        reason: 'Model menghasilkan format respons yang bukan JSON valid',
+        spec: null
+      });
     }
 
-    // Try 1 retry with error feedback if initial spec had validation errors
-    const retryResp = await gemini.models.generateContent({
-      model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
-      contents: `${prompt}\n\nPERBAIKI kesalahan berikut dari jawaban sebelumnya:\n- ${errors.join('\n- ')}`,
-      config: {
-        systemInstruction: SPRITE_SYSTEM_PROMPT,
-        responseMimeType: 'application/json',
-        responseSchema: SPEC_JSON_SCHEMA as any,
-        temperature: 0.2
+    let { spec, errors } = validateSpec(parsed);
+
+    // Retry 1x jika validasi skema gagal
+    if (!spec) {
+      const retryResp = await gemini.models.generateContent({
+        model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
+        contents: `${promptForSpec}\n\nPERBAIKI kesalahan validasi schema berikut:\n- ${errors.join('\n- ')}`,
+        config: {
+          systemInstruction: SPRITE_SYSTEM_PROMPT,
+          responseMimeType: 'application/json',
+          responseSchema: SPEC_JSON_SCHEMA as any,
+          temperature: 0.3
+        }
+      });
+      const retryText = retryResp.text || '';
+      try {
+        const retryParsed = JSON.parse(retryText.replace(/```json/g, '').replace(/```/g, '').trim());
+        const retryValidation = validateSpec(retryParsed);
+        if (retryValidation.spec) {
+          spec = retryValidation.spec;
+        }
+      } catch {}
+    }
+
+    if (!spec) {
+      return res.json({
+        success: false,
+        source: 'fallback',
+        reason: `Validasi CharacterSpec gagal setelah retry: ${errors.join(', ')}`,
+        spec: null
+      });
+    }
+
+    // Diversity Guard: periksa perbedaan siluet dengan 5 spec terakhir
+    const diversityCheck = checkDiversity(spec, recentSpecs);
+    if (!diversityCheck.isDiverse) {
+      try {
+        const diversityRetry = await gemini.models.generateContent({
+          model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
+          contents: `${promptForSpec}
+
+[PERINGATAN DIVERSITY GUARD]: Karakter yang dihasilkan terlalu mirip dengan karakter sesi sebelumnya (hanya beda ${diversityCheck.minDiff} aspek siluet).
+UBAH MINIMAL 3 ASPEK SILUET agar benar-benar unik! Variasikan:
+- proportions (height, headSize, torsoWidth, legLength, armThickness)
+- body (slim/normal/heavy), head, weapon, offhand, cape
+- traits (horns, pointy_ears, tail, hunch, wings, beard) atau accessories.`,
+          config: {
+            systemInstruction: SPRITE_SYSTEM_PROMPT,
+            responseMimeType: 'application/json',
+            responseSchema: SPEC_JSON_SCHEMA as any,
+            temperature: 0.9
+          }
+        });
+
+        const divText = diversityRetry.text || '';
+        const divParsed = JSON.parse(divText.replace(/```json/g, '').replace(/```/g, '').trim());
+        const divValid = validateSpec(divParsed);
+        if (divValid.spec) {
+          spec = divValid.spec;
+        }
+      } catch (divErr: any) {
+        console.warn('Diversity guard retry skipped:', divErr.message);
       }
-    });
-    const retryText = retryResp.text || '';
-    const retryParsed = JSON.parse(retryText.replace(/```json/g, '').replace(/```/g, '').trim());
-    const retryValidation = validateSpec(retryParsed);
-
-    if (retryValidation.spec) {
-      return res.json({ success: true, spec: retryValidation.spec, validationErrors: [] });
     }
+
+    // Simpan ke history recentSpecs (maks 5)
+    recentSpecs.push(spec);
+    if (recentSpecs.length > 5) recentSpecs.shift();
 
     return res.json({
       success: true,
-      spec: DEFAULT_SPEC,
-      validationErrors: errors,
-      fallbackUsed: true
+      source: 'gemini',
+      usedReference: !!referenceAnalysis,
+      referenceAnalysis,
+      spec,
+      validationErrors: []
     });
   } catch (err: any) {
-    return res.json({ success: false, error: err.message, useFallback: true });
+    return res.json({
+      success: false,
+      source: 'fallback',
+      reason: `Panggilan API Gemini gagal: ${err.message}`,
+      spec: null
+    });
   }
 });
 
@@ -352,7 +506,9 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`PixelForge AI Studio Server running at http://0.0.0.0:${PORT}`);
+    console.log(`PixelForge AI Studio Server running at:`);
+    console.log(`  > Local:   http://localhost:${PORT}`);
+    console.log(`  > Network: http://127.0.0.1:${PORT}`);
   });
 }
 

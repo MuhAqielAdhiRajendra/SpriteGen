@@ -66,7 +66,7 @@ export const ProviderSettingsModal: React.FC<ProviderSettingsModalProps> = ({
   activeProvider,
   onSaveProvider
 }) => {
-  const [selectedType, setSelectedType] = useState<AIProviderType>(activeProvider.type);
+  const [selectedType, setSelectedType] = useState<AIProviderType>(activeProvider?.type || 'gemini');
   const [config, setConfig] = useState<AIProviderConfig>({ ...activeProvider });
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<{
@@ -76,6 +76,23 @@ export const ProviderSettingsModal: React.FC<ProviderSettingsModalProps> = ({
     details?: any;
     hint?: string;
   } | null>(null);
+
+  const testBoxRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Sync state whenever modal is opened
+  React.useEffect(() => {
+    if (isOpen) {
+      setSelectedType(activeProvider?.type || 'gemini');
+      setConfig({ ...activeProvider });
+      setTestResult(null);
+    }
+  }, [isOpen, activeProvider]);
+
+  React.useEffect(() => {
+    if (testResult && testBoxRef.current) {
+      testBoxRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [testResult]);
 
   if (!isOpen) return null;
 
@@ -117,14 +134,6 @@ export const ProviderSettingsModal: React.FC<ProviderSettingsModalProps> = ({
       setIsTesting(false);
     }
   };
-
-  const testBoxRef = React.useRef<HTMLDivElement | null>(null);
-
-  React.useEffect(() => {
-    if (testResult && testBoxRef.current) {
-      testBoxRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, [testResult]);
 
   const handleSave = () => {
     onSaveProvider(config);
